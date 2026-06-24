@@ -1,0 +1,20 @@
+# Python caches
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Local Caching Data
+data_cache/
+*.pkl
+
+# Secrets and Configurations
+.env
+api_key.txt
+
+# Generated Reports (PDF and Excel outputs)
+*.pdf
+*.xlsx
+
+# OS-specific files
+.DS_Store
+Thumbs.db

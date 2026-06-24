@@ -1,0 +1,171 @@
+import os
+import time
+import pickle
+import datetime
+import yfinance as yf
+import pandas as pd
+from dotenv import load_dotenv
+
+# Load configuration
+load_dotenv()
+CACHE_DIR = "data_cache"
+CACHE_EXPIRY_DAYS = int(os.getenv("CACHE_EXPIRY_DAYS", "7"))
+
+if not os.path.exists(CACHE_DIR):
+    os.makedirs(CACHE_DIR)
+
+def get_cache_path(ticker):
+    safe_ticker = ticker.replace(".", "_")
+    return os.path.join(CACHE_DIR, f"{safe_ticker}.pkl")
+
+def is_cache_fresh(filepath):
+    if not os.path.exists(filepath):
+        return False
+    
+    file_time = datetime.datetime.fromtimestamp(os.path.getmtime(filepath))
+    age = datetime.datetime.now() - file_time
+    return age.days < CACHE_EXPIRY_DAYS
+
+def fetch_stock_data(ticker):
+    """
+    Fetches raw stock data from yfinance and returns a structured dictionary.
+    """
+    try:
+        t = yf.Ticker(ticker)
+        
+        # 1. Fetch Price History
+        hist = t.history(period="max")
+        if hist.empty:
+            hist = t.history(period="5y")
+            
+        if hist.empty:
+            return None
+
+        current_price = float(hist['Close'].iloc[-1])
+        ath = float(hist['Close'].max())
+        
+        # Calculate 3y High
+        three_years_ago = datetime.datetime.now() - datetime.timedelta(days=3*365)
+        hist_3y = hist.loc[hist.index >= pd.to_datetime(three_years_ago, utc=True)]
+        if not hist_3y.empty:
+            three_year_high = float(hist_3y['Close'].max())
+        else:
+            three_year_high = ath
+            
+        # 2. Fetch Annual and Quarterly Financials
+        financials = t.financials
+        quarterly_financials = t.quarterly_financials
+        
+        # Extract Sales (Total Revenue)
+        sales_history = []
+        if financials is not None and not financials.empty:
+            revenue_keys = [k for k in financials.index if 'Revenue' in k or 'Sales' in k or 'Operating Revenue' in k]
+            if revenue_keys:
+                sales_history = financials.loc[revenue_keys[0]].dropna().tolist()
+                
+        # Extract Net Profits (Net Income)
+        profit_history = []
+        if financials is not None and not financials.empty:
+            profit_keys = [k for k in financials.index if 'Net Income' in k or 'Profit' in k]
+            if profit_keys:
+                profit_history = financials.loc[profit_keys[0]].dropna().tolist()
+                
+        # Extract Quarterly Profits
+        quarterly_profits = []
+        if quarterly_financials is not None and not quarterly_financials.empty:
+            profit_keys = [k for k in quarterly_financials.index if 'Net Income' in k or 'Profit' in k]
+            if profit_keys:
+                quarterly_profits = quarterly_financials.loc[profit_keys[0]].dropna().tolist()
+
+        # 3. Get Key Info (PE, EPS, Debt, Reserves, Shareholdings)
+        info = t.info
+        
+        # Safe extraction of keys from info dict
+        pe = info.get('trailingPE') or info.get('forwardPE') or 0.0
+        eps = info.get('trailingEps') or info.get('forwardEps') or 0.0
+        
+        debt_to_equity = info.get('debtToEquity') or 0.0
+        
+        # Reserves
+        reserves = 0.0
+        balance_sheet = t.balance_sheet
+        if balance_sheet is not None and not balance_sheet.empty:
+            reserves_keys = [k for k in balance_sheet.index if 'Retained Earnings' in k or 'Surplus' in k or 'Reserves' in k]
+            if reserves_keys:
+                reserves_series = balance_sheet.loc[reserves_keys[0]].dropna()
+                if not reserves_series.empty:
+                    reserves = float(reserves_series.iloc[0])
+                    
+        # Total Borrowings/Debt
+        debt = 0.0
+        if balance_sheet is not None and not balance_sheet.empty:
+            debt_keys = [k for k in balance_sheet.index if 'Long Term Debt' in k or 'Total Debt' in k or 'Borrowings' in k]
+            if debt_keys:
+                debt_series = balance_sheet.loc[debt_keys[0]].dropna()
+                if not debt_series.empty:
+                    debt = float(debt_series.iloc[0])
+
+        # Shareholding details
+        held_by_insiders = info.get('heldPercentInsiders') or 0.0
+        held_by_institutions = info.get('heldPercentInstitutions') or 0.0
+        
+        promoter_share = held_by_insiders * 100.0 if held_by_insiders <= 1.0 else held_by_insiders
+        inst_share = held_by_institutions * 100.0 if held_by_institutions <= 1.0 else held_by_institutions
+        public_share = max(0.0, 100.0 - promoter_share - inst_share)
+
+        data = {
+            "ticker": ticker,
+            "current_price": current_price,
+            "ath": ath,
+            "three_year_high": three_year_high,
+            "sales_history": sales_history,
+            "profit_history": profit_history,
+            "quarterly_profits": quarterly_profits,
+            "pe": pe,
+            "eps": eps,
+            "debt_to_equity": debt_to_equity,
+            "debt": debt,
+            "reserves": reserves,
+            "promoter_share": promoter_share,
+            "inst_share": inst_share,
+            "public_share": public_share,
+            "price_history_6m": hist['Close'].tail(180).tolist() if len(hist) > 180 else hist['Close'].tolist(),
+            "timestamp": datetime.datetime.now()
+        }
+        return data
+    except Exception as e:
+        print(f"Error fetching data for {ticker}: {str(e)}")
+        return None
+
+def get_stock_data(ticker, force_refresh=False):
+    cache_path = get_cache_path(ticker)
+    
+    if not force_refresh and is_cache_fresh(cache_path):
+        try:
+            with open(cache_path, 'rb') as f:
+                return pickle.load(f)
+        except Exception:
+            pass
+            
+    # Fetch fresh data
+    data = fetch_stock_data(ticker)
+    if data:
+        try:
+            with open(cache_path, 'wb') as f:
+                pickle.dump(data, f)
+        except Exception as e:
+            print(f"Error caching data for {ticker}: {str(e)}")
+            
+    return data
+
+def batch_update_stocks(tickers, force_refresh=False, progress_callback=None):
+    results = {}
+    total = len(tickers)
+    for idx, ticker in enumerate(tickers):
+        if progress_callback:
+            progress_callback(idx, total, ticker)
+        data = get_stock_data(ticker, force_refresh=force_refresh)
+        if data:
+            results[ticker] = data
+        time.sleep(0.1) # Small sleep
+    return results

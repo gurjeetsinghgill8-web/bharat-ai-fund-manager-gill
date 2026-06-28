@@ -21,7 +21,7 @@ def load_api_key():
             pass
             
     # Fallback to env
-    return os.getenv("GEMINI_API_KEY")
+    return os.getenv("GEMINI_API_KEY") or os.getenv("GROQ_API_KEY") or os.getenv("GROK_API_KEY") or os.getenv("XAI_API_KEY")
 
 def has_active_api_key():
     key = load_api_key()

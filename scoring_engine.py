@@ -153,3 +153,194 @@ def run_scoring(batch_data):
     red_alerts_df = df[df["Red Alert"] == True].copy()
     
     return df, latest_highs_df, continuous_performers_df, red_alerts_df
+
+def calculate_cagr(history):
+    """
+    Calculates Compounded Annual Growth Rate (CAGR) from history list.
+    index 0 is the latest year, index -1 is the oldest year.
+    """
+    if not history or len(history) < 2:
+        return 0.0
+    latest = history[0]
+    oldest = history[-1]
+    if oldest <= 0 or latest <= 0:
+        return 0.0
+    n = len(history) - 1
+    try:
+        return ((latest / oldest) ** (1 / n) - 1) * 100.0
+    except Exception:
+        return 0.0
+
+def score_stock_v2(stock_data):
+    """
+    Applies the Page 2 scoring rules to a single stock's data.
+    Returns a dict with scores and metadata.
+    """
+    ticker = stock_data["ticker"]
+    current_price = stock_data["current_price"]
+    ath = stock_data["ath"]
+    three_year_high = stock_data["three_year_high"]
+    sales_hist = stock_data["sales_history"]
+    profit_hist = stock_data["profit_history"]
+    pe = stock_data["pe"]
+    eps = stock_data["eps"]
+    debt_eq = stock_data["debt_to_equity"]
+    sma_200 = stock_data.get("sma_200", 0.0)
+    
+    # Proximity and filter check for 200 SMA
+    is_above_200_sma = True
+    dist_pct = 0.0
+    if sma_200 > 0:
+        is_above_200_sma = current_price >= sma_200
+        dist_pct = ((current_price - sma_200) / sma_200) * 100.0
+    else:
+        # If no sma_200 is available, we assume it passes but flag it
+        is_above_200_sma = True
+        dist_pct = 0.0
+        
+    # 1. Sales Performance (5 Marks)
+    sales_score = 0
+    latest_sales = sales_hist[0] if sales_hist else 0
+    max_sales = max(sales_hist) if sales_hist else 0
+    
+    if max_sales > 0:
+        if latest_sales >= (0.98 * max_sales): # ATH Sales
+            sales_score = 5
+        elif latest_sales >= (0.80 * max_sales): # within 10-20% drop from peak
+            sales_score = 3
+        else:
+            sales_score = 0
+            
+    # 2. Profit Performance (5 Marks)
+    profit_score = 0
+    latest_profit = profit_hist[0] if profit_hist else 0
+    max_profit = max(profit_hist) if profit_hist else 0
+    
+    if max_profit > 0:
+        if latest_profit >= (0.98 * max_profit): # ATH Profit
+            profit_score = 5
+        elif latest_profit >= (0.80 * max_profit): # within 10-20% drop from peak
+            profit_score = 3
+        else:
+            profit_score = 0
+
+    # 3. Annual Sales CAGR (3 Marks)
+    sales_cagr = calculate_cagr(sales_hist)
+    sales_cagr_score = 0
+    if sales_cagr > 20.0:
+        sales_cagr_score = 3
+    elif sales_cagr > 15.0:
+        sales_cagr_score = 2
+    elif sales_cagr > 10.0:
+        sales_cagr_score = 1
+        
+    # 4. Annual Profit CAGR (3 Marks)
+    profit_cagr = calculate_cagr(profit_hist)
+    profit_cagr_score = 0
+    if profit_cagr > 20.0:
+        profit_cagr_score = 3
+    elif profit_cagr > 15.0:
+        profit_cagr_score = 2
+    elif profit_cagr > 10.0:
+        profit_cagr_score = 1
+        
+    # 5. Value / Momentum Fit (PE < EPS) - No Points, just indicator (tick mark/star)
+    value_fit = False
+    if pe > 0 and eps > 0 and pe < eps:
+        value_fit = True
+        
+    total_score = sales_score + profit_score + sales_cagr_score + profit_cagr_score
+    
+    # 6. Red Alert Check (Keep same as original)
+    is_red_alert = False
+    red_reasons = []
+    
+    if max_sales > 0 and latest_sales < (0.65 * max_sales):
+        is_red_alert = True
+        red_reasons.append("Sales dropped > 35% from peak")
+    if max_profit > 0 and latest_profit < (0.65 * max_profit):
+        is_red_alert = True
+        red_reasons.append("Profit dropped > 35% from peak")
+    
+    debt_decimal = debt_eq / 100.0 if debt_eq > 5.0 else debt_eq
+    if debt_decimal > 2.0:
+        is_red_alert = True
+        red_reasons.append(f"High Debt/Equity Ratio ({round(debt_decimal, 2)})")
+    if stock_data["reserves"] < 0:
+        is_red_alert = True
+        red_reasons.append("Negative Reserves")
+
+    # 7. Momentum status (Keep same as original)
+    price_hist = stock_data["price_history_6m"]
+    momentum_status = "Normal"
+    if price_hist:
+        days_30 = price_hist[-21:] if len(price_hist) >= 21 else price_hist
+        days_60 = price_hist[-42:] if len(price_hist) >= 42 else price_hist
+        days_180 = price_hist
+        
+        min_30 = min(days_30) if days_30 else 0
+        max_30 = max(days_30) if days_30 else 1
+        min_60 = min(days_60) if days_60 else 0
+        max_60 = max(days_60) if days_60 else 1
+        min_180 = min(days_180) if days_180 else 0
+        max_180 = max(days_180) if days_180 else 1
+        
+        if min_30 >= 0.92 * max_30:
+            momentum_status = "Sustained High (1 Month)"
+        elif min_60 >= 0.88 * max_60:
+            momentum_status = "Sustained High (2 Months)"
+        elif min_180 >= 0.80 * max_180:
+            momentum_status = "Sustained High (6 Months)"
+
+    return {
+        "Ticker": ticker,
+        "Category": get_category(ticker),
+        "Price": round(current_price, 2),
+        "ATH": round(ath, 2),
+        "3Y High": round(three_year_high, 2),
+        "PE": round(pe, 2),
+        "EPS": round(eps, 2),
+        "Sales Score": sales_score,
+        "Profit Score": profit_score,
+        "Sales CAGR": round(sales_cagr, 2),
+        "Sales CAGR Score": sales_cagr_score,
+        "Profit CAGR": round(profit_cagr, 2),
+        "Profit CAGR Score": profit_cagr_score,
+        "Value Fit": value_fit,
+        "Total Score": total_score,
+        "Red Alert": is_red_alert,
+        "Red Reasons": ", ".join(red_reasons) if red_reasons else "None",
+        "Momentum Status": momentum_status,
+        "Debt/Equity": round(debt_eq, 2),
+        "Reserves": round(stock_data["reserves"] / 10000000.0, 2) if stock_data["reserves"] else 0.0, # in Crores
+        "Promoter %": round(stock_data["promoter_share"], 1),
+        "Institution %": round(stock_data["inst_share"], 1),
+        "Public %": round(stock_data["public_share"], 1),
+        "200 SMA": round(sma_200, 2) if sma_200 else 0.0,
+        "200 SMA Dist %": round(dist_pct, 2) if sma_200 else 0.0,
+        "Is Above 200 SMA": is_above_200_sma
+    }
+
+def run_scoring_v2(batch_data):
+    scored_list = []
+    for ticker, data in batch_data.items():
+        scored = score_stock_v2(data)
+        # Filter: If SMA details are present, filter out stocks where Is Above 200 SMA is False
+        if scored["200 SMA"] > 0 and not scored["Is Above 200 SMA"]:
+            continue
+        scored_list.append(scored)
+        
+    df = pd.DataFrame(scored_list)
+    if df.empty:
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+        
+    # Sort by 200 SMA Dist % ascending by default
+    df = df.sort_values(by="200 SMA Dist %", ascending=True)
+    
+    # Continuous Performers (Momentum Status != Normal)
+    continuous_performers_df = df[df["Momentum Status"] != "Normal"].copy()
+    
+    # Red Alerts
+    red_alerts_df = df[df["Red Alert"] == True].copy()
+    
+    return df, continuous_performers_df, red_alerts_df

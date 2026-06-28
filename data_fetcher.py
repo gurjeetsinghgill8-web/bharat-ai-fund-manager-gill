@@ -52,6 +52,13 @@ def fetch_stock_data(ticker):
         else:
             three_year_high = ath
             
+        # Calculate 200 SMA
+        sma_200 = 0.0
+        if len(hist) >= 200:
+            sma_200 = float(hist['Close'].rolling(window=200).mean().iloc[-1])
+        elif not hist.empty:
+            sma_200 = float(hist['Close'].mean())
+            
         # 2. Fetch Annual and Quarterly Financials
         financials = t.financials
         quarterly_financials = t.quarterly_financials
@@ -130,6 +137,7 @@ def fetch_stock_data(ticker):
             "inst_share": inst_share,
             "public_share": public_share,
             "price_history_6m": hist['Close'].tail(180).tolist() if len(hist) > 180 else hist['Close'].tolist(),
+            "sma_200": sma_200,
             "timestamp": datetime.datetime.now()
         }
         return data

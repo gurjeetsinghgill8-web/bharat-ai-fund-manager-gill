@@ -413,9 +413,9 @@ else:
             nifty_mock_return = 12.0 * years
             
             for ticker, data in st.session_state["stock_cache"].items():
-                hist_prices = data.get("price_history_6m", [])
+                hist_prices = data.get("price_history_5y", data.get("price_history_6m", []))
                 price_len = len(hist_prices)
-                days_ago = years * 180
+                days_ago = years * 250
                 if price_len > days_ago:
                     old_price = hist_prices[-days_ago]
                     curr_price = hist_prices[-1]
@@ -689,9 +689,9 @@ else:
             nifty_mock_return = 12.0 * years
             
             for ticker, data in st.session_state["stock_cache"].items():
-                hist_prices = data.get("price_history_6m", [])
+                hist_prices = data.get("price_history_5y", data.get("price_history_6m", []))
                 price_len = len(hist_prices)
-                days_ago = years * 180
+                days_ago = years * 250
                 if price_len > days_ago:
                     old_price = hist_prices[-days_ago]
                     curr_price = hist_prices[-1]

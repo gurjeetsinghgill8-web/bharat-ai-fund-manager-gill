@@ -137,6 +137,7 @@ def fetch_stock_data(ticker):
             "inst_share": inst_share,
             "public_share": public_share,
             "price_history_6m": hist['Close'].tail(180).tolist() if len(hist) > 180 else hist['Close'].tolist(),
+            "price_history_5y": hist['Close'].tail(5*252).tolist() if len(hist) > (5*252) else hist['Close'].tolist(),
             "sma_200": sma_200,
             "timestamp": datetime.datetime.now()
         }

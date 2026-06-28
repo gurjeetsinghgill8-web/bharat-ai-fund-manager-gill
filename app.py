@@ -563,10 +563,15 @@ else:
                 df = df.sort_values(by="Total Score", ascending=False)
                 
             # Display table
-            display_cols = ["Ticker", "Category", "Price", "Total Score", "200 SMA", "200 SMA Dist %", "Sales CAGR", "Profit CAGR", "PE", "EPS", "Value Fit"]
-            display_df = df[display_cols].copy() if not df.empty else pd.DataFrame(columns=display_cols)
+            display_cols = ["Ticker", "Category", "Price", "Total Score", "Double ATH Status", "200 SMA", "200 SMA Dist %", "Sales CAGR", "Profit CAGR", "PE", "EPS", "Value Fit"]
+            display_df = df.copy() if not df.empty else pd.DataFrame(columns=display_cols)
             if not display_df.empty:
+                display_df["Double ATH Status"] = display_df.apply(
+                    lambda r: "🟢 Double Peak" if r["Sales Score"] == 5 and r["Profit Score"] == 5 else "🔴 ALERT: Not Peak",
+                    axis=1
+                )
                 display_df["Value Fit"] = display_df["Value Fit"].map({True: "⭐", False: ""})
+                display_df = display_df[display_cols]
                 
             st.dataframe(
                 display_df,
@@ -580,6 +585,21 @@ else:
             if selected_ticker and selected_ticker != "None":
                 stock_data = st.session_state["stock_cache"][selected_ticker]
                 row_data = df[df["Ticker"] == selected_ticker].iloc[0]
+                
+                is_double_ath = row_data["Sales Score"] == 5 and row_data["Profit Score"] == 5
+                if not is_double_ath:
+                    st.markdown("""
+                    <div style="margin-bottom: 15px; background-color: rgba(239, 68, 68, 0.2); border: 2px solid #EF4444; color: #B91C1C; padding: 15px; border-radius: 10px; font-weight: bold;">
+                        ⚠️ ALERT: Chhoti-Moti Gadbad Detected! This stock does NOT have both sales and profits at All-Time Highs.
+                        (Sales Score: {}/5 | Profit Score: {}/5)
+                    </div>
+                    """.format(int(row_data["Sales Score"]), int(row_data["Profit Score"])), unsafe_allow_html=True)
+                else:
+                    st.markdown("""
+                    <div style="margin-bottom: 15px; background-color: rgba(16, 185, 129, 0.2); border: 2px solid #10B981; color: #065F46; padding: 15px; border-radius: 10px; font-weight: bold;">
+                        ✅ PERFECT: Double All-Time High Peak (Sales & Profits are at historical peaks).
+                    </div>
+                    """, unsafe_allow_html=True)
                 
                 col_left, col_right = st.columns([2, 1])
                 with col_left:

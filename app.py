@@ -276,7 +276,7 @@ else:
             # Display table
             display_cols = ["Ticker", "Category", "Price", "ATH", "3Y High", "Total Score", "PE", "EPS", "Momentum Status"]
             st.dataframe(
-                df[display_cols].style.background_gradient(subset=["Total Score"], cmap="Blues"),
+                df[display_cols],
                 use_container_width=True
             )
             
@@ -569,7 +569,7 @@ else:
                 display_df["Value Fit"] = display_df["Value Fit"].map({True: "⭐", False: ""})
                 
             st.dataframe(
-                display_df.style.background_gradient(subset=["Total Score"], cmap="Blues"),
+                display_df,
                 use_container_width=True
             )
             

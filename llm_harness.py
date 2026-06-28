@@ -29,127 +29,209 @@ def has_active_api_key():
 
 # Initialize client if key exists
 api_key = load_api_key()
-if api_key:
+if api_key and api_key.startswith("AIzaSy"):
     genai.configure(api_key=api_key)
+
+import requests
+import json
+
+def get_provider_and_key():
+    key = load_api_key()
+    if not key:
+        return None, None
+    key = key.strip()
+    if key.startswith("gsk_"):
+        return "groq", key
+    elif key.startswith("xai-"):
+        return "grok", key
+    elif key.startswith("AIzaSy"):
+        return "gemini", key
+    else:
+        # Default fallback
+        return "gemini", key
+
+def call_groq_api(prompt, key, system_instruction=None):
+    url = "https://api.groq.com/openai/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {key}",
+        "Content-Type": "application/json"
+    }
+    messages = []
+    if system_instruction:
+        messages.append({"role": "system", "content": system_instruction})
+    messages.append({"role": "user", "content": prompt})
+    
+    payload = {
+        "model": "llama-3.1-70b-versatile",
+        "messages": messages,
+        "temperature": 0.3
+    }
+    try:
+        response = requests.post(url, headers=headers, json=payload, timeout=15)
+        if response.status_code == 200:
+            res_json = response.json()
+            return res_json["choices"][0]["message"]["content"].strip()
+        else:
+            print(f"Groq API Error: {response.status_code} - {response.text}")
+            return None
+    except Exception as e:
+        print(f"Groq Request Exception: {str(e)}")
+        return None
+
+def call_grok_xai_api(prompt, key, system_instruction=None):
+    url = "https://api.x.ai/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {key}",
+        "Content-Type": "application/json"
+    }
+    messages = []
+    if system_instruction:
+        messages.append({"role": "system", "content": system_instruction})
+    messages.append({"role": "user", "content": prompt})
+    
+    payload = {
+        "model": "grok-beta",
+        "messages": messages,
+        "temperature": 0.3
+    }
+    try:
+        response = requests.post(url, headers=headers, json=payload, timeout=15)
+        if response.status_code == 200:
+            res_json = response.json()
+            return res_json["choices"][0]["message"]["content"].strip()
+        else:
+            print(f"xAI Grok API Error: {response.status_code} - {response.text}")
+            return None
+    except Exception as e:
+        print(f"xAI Grok Request Exception: {str(e)}")
+        return None
 
 def generate_ai_narrative(ticker, row_data):
     """
-    Uses Gemini LLM to generate a professional, simplified 10th-grade level investment narrative.
+    Uses dynamically routed LLM API to generate a professional, simplified 10th-grade level investment narrative.
     Falls back to rule-based generation if API key is not present.
     """
     from report_generator import generate_stock_narrative # local import to prevent circularity
     
-    if not has_active_api_key():
-        # Fallback to local rule-based builder
+    provider, key = get_provider_and_key()
+    if not provider:
         return generate_stock_narrative(ticker, row_data)
         
+    prompt = f"""
+    Analyze the following stock metrics and write an investment narrative in a simple, engaging, 10th-grade reading level.
+    The goal is to explain why this stock is a good momentum play and any potential risks.
+    
+    Company Ticker: {ticker.replace('.NS', '')}
+    Current Price: ₹{row_data['Price']}
+    All-Time High (ATH): ₹{row_data['ATH']}
+    3-Year High: ₹{row_data['3Y High']}
+    Total Score on our Momentum Engine: {row_data['Total Score']}/20
+    Price Score: {row_data['Price Score']}/5
+    Sales Score: {row_data['Sales Score']}/5
+    Profit Score: {row_data['Profit Score']}/5
+    Quarter Score: {row_data['Quarter Score']}/2
+    PE vs EPS Score: {row_data['PE vs EPS Score']}/3
+    PE Ratio: {row_data['PE']}
+    Earnings Per Share (EPS): {row_data['EPS']}
+    Debt-to-Equity Ratio: {row_data['Debt/Equity']}
+    Reserves: ₹{row_data['Reserves']} Crores
+    Shareholding Pattern: Promoter={row_data['Promoter %']}%, Institutions={row_data['Institution %']}%, Public={row_data['Public %']}%
+    
+    Instructions:
+    1. Keep it under 150 words.
+    2. Explain the company's financial strengths (e.g. low debt, high reserves, promoter skin in the game).
+    3. Explain what a 10th grader should understand about this business's current rocket speed.
+    4. Tone: Confident, insightful, and easy to read.
+    """
+    
+    if provider == "groq":
+        res = call_groq_api(prompt, key)
+        if res: return res
+    elif provider == "grok":
+        res = call_grok_xai_api(prompt, key)
+        if res: return res
+        
+    # Default to Gemini
     try:
-        # Re-configure to ensure fresh load
-        genai.configure(api_key=load_api_key())
+        genai.configure(api_key=key)
         model = genai.GenerativeModel('gemini-1.5-flash')
-        
-        prompt = f"""
-        Analyze the following stock metrics and write an investment narrative in a simple, engaging, 10th-grade reading level.
-        The goal is to explain why this stock is a good momentum play and any potential risks.
-        
-        Company Ticker: {ticker.replace('.NS', '')}
-        Current Price: ₹{row_data['Price']}
-        All-Time High (ATH): ₹{row_data['ATH']}
-        3-Year High: ₹{row_data['3Y High']}
-        Total Score on our Momentum Engine: {row_data['Total Score']}/20
-        Price Score: {row_data['Price Score']}/5
-        Sales Score: {row_data['Sales Score']}/5
-        Profit Score: {row_data['Profit Score']}/5
-        Quarter Score: {row_data['Quarter Score']}/2
-        PE vs EPS Score: {row_data['PE vs EPS Score']}/3
-        PE Ratio: {row_data['PE']}
-        Earnings Per Share (EPS): {row_data['EPS']}
-        Debt-to-Equity Ratio: {row_data['Debt/Equity']}
-        Reserves: ₹{row_data['Reserves']} Crores
-        Shareholding Pattern: Promoter={row_data['Promoter %']}%, Institutions={row_data['Institution %']}%, Public={row_data['Public %']}%
-        
-        Instructions:
-        1. Keep it under 150 words.
-        2. Explain the company's financial strengths (e.g. low debt, high reserves, promoter skin in the game).
-        3. Explain what a 10th grader should understand about this business's current rocket speed.
-        4. Tone: Confident, insightful, and easy to read.
-        """
-        
         response = model.generate_content(prompt)
         if response and response.text:
             return response.text.strip()
         else:
             return generate_stock_narrative(ticker, row_data)
-            
     except Exception as e:
         print(f"Gemini generation error: {str(e)}. Falling back to local template.")
         return generate_stock_narrative(ticker, row_data)
 
 def generate_ai_narrative_v2(ticker, row_data):
     """
-    Uses Gemini LLM to generate a professional, simplified 10th-grade level investment narrative for Page 2 (Value & 200 SMA).
+    Uses dynamically routed LLM API to generate a professional, simplified 10th-grade level investment narrative for Page 2 (Value & 200 SMA).
     Falls back to rule-based generation if API key is not present.
     """
     from report_generator import generate_stock_narrative_v2 # local import to prevent circularity
     
-    if not has_active_api_key():
-        # Fallback to local rule-based builder
+    provider, key = get_provider_and_key()
+    if not provider:
         return generate_stock_narrative_v2(ticker, row_data)
         
+    prompt = f"""
+    Analyze the following stock metrics and write an investment narrative in a simple, engaging, 10th-grade reading level.
+    The goal is to explain why this stock is a good value/momentum entry candidate and any potential risks.
+    This stock passes our 200 SMA filter (meaning it trades above its 200-day simple moving average).
+    
+    Company Ticker: {ticker.replace('.NS', '')}
+    Current Price: ₹{row_data['Price']}
+    200-day Moving Average (200 SMA): ₹{row_data['200 SMA']}
+    Distance from 200 SMA: {row_data['200 SMA Dist %']}% (lower distance is better for entry)
+    Total Score on our Value/SMA Engine: {row_data['Total Score']}/16
+    Sales Score: {row_data['Sales Score']}/5
+    Profit Score: {row_data['Profit Score']}/5
+    Sales CAGR (Compounded Annual growth rate): {row_data['Sales CAGR']}% (Score: {row_data['Sales CAGR Score']}/3)
+    Profit CAGR (Compounded Annual growth rate): {row_data['Profit CAGR']}% (Score: {row_data['Profit CAGR Score']}/3)
+    Value Fit (PE < EPS): {'Yes' if row_data['Value Fit'] else 'No'}
+    PE Ratio: {row_data['PE']}
+    Earnings Per Share (EPS): {row_data['EPS']}
+    Debt-to-Equity Ratio: {row_data['Debt/Equity']}
+    Reserves: ₹{row_data['Reserves']} Crores
+    Shareholding Pattern: Promoter={row_data['Promoter %']}%, Institutions={row_data['Institution %']}%, Public={row_data['Public %']}%
+    
+    Instructions:
+    1. Keep it under 150 words.
+    2. Explain the company's financial strengths (e.g. low debt, high reserves, promoter holding, robust CAGR growth).
+    3. Explain what a 10th grader should understand about why buying close to the 200 SMA makes sense (like buying a good product on a sensible discount near its average price).
+    4. Tone: Confident, insightful, and easy to read.
+    """
+    
+    if provider == "groq":
+        res = call_groq_api(prompt, key)
+        if res: return res
+    elif provider == "grok":
+        res = call_grok_xai_api(prompt, key)
+        if res: return res
+        
+    # Default to Gemini
     try:
-        # Re-configure to ensure fresh load
-        genai.configure(api_key=load_api_key())
+        genai.configure(api_key=key)
         model = genai.GenerativeModel('gemini-1.5-flash')
-        
-        prompt = f"""
-        Analyze the following stock metrics and write an investment narrative in a simple, engaging, 10th-grade reading level.
-        The goal is to explain why this stock is a good value/momentum entry candidate and any potential risks.
-        This stock passes our 200 SMA filter (meaning it trades above its 200-day simple moving average).
-        
-        Company Ticker: {ticker.replace('.NS', '')}
-        Current Price: ₹{row_data['Price']}
-        200-day Moving Average (200 SMA): ₹{row_data['200 SMA']}
-        Distance from 200 SMA: {row_data['200 SMA Dist %']}% (lower distance is better for entry)
-        Total Score on our Value/SMA Engine: {row_data['Total Score']}/16
-        Sales Score: {row_data['Sales Score']}/5
-        Profit Score: {row_data['Profit Score']}/5
-        Sales CAGR (Compounded Annual growth rate): {row_data['Sales CAGR']}% (Score: {row_data['Sales CAGR Score']}/3)
-        Profit CAGR (Compounded Annual growth rate): {row_data['Profit CAGR']}% (Score: {row_data['Profit CAGR Score']}/3)
-        Value Fit (PE < EPS): {'Yes' if row_data['Value Fit'] else 'No'}
-        PE Ratio: {row_data['PE']}
-        Earnings Per Share (EPS): {row_data['EPS']}
-        Debt-to-Equity Ratio: {row_data['Debt/Equity']}
-        Reserves: ₹{row_data['Reserves']} Crores
-        Shareholding Pattern: Promoter={row_data['Promoter %']}%, Institutions={row_data['Institution %']}%, Public={row_data['Public %']}%
-        
-        Instructions:
-        1. Keep it under 150 words.
-        2. Explain the company's financial strengths (e.g. low debt, high reserves, promoter holding, robust CAGR growth).
-        3. Explain what a 10th grader should understand about why buying close to the 200 SMA makes sense (like buying a good product on a sensible discount near its average price).
-        4. Tone: Confident, insightful, and easy to read.
-        """
-        
         response = model.generate_content(prompt)
         if response and response.text:
             return response.text.strip()
         else:
             return generate_stock_narrative_v2(ticker, row_data)
-            
     except Exception as e:
         print(f"Gemini generation error: {str(e)}. Falling back to local template.")
         return generate_stock_narrative_v2(ticker, row_data)
 
 def discuss_with_jarvis(user_message, chat_history, active_df, page_mode="page_1"):
     """
-    Sends the user message, context of top performers, and chat history to Gemini.
+    Sends the user message, context of top performers, and chat history to dynamically routed LLM API.
     """
-    if not has_active_api_key():
-        return "Jarvis offline. Gemini API key is missing in `api_key.txt` or `.env`. Please add your free key to enable conversations!"
+    provider, key = get_provider_and_key()
+    if not provider:
+        return "Jarvis offline. API key is missing in `api_key.txt` or `.env`."
         
     try:
-        genai.configure(api_key=load_api_key())
-        model = genai.GenerativeModel('gemini-1.5-flash')
-        
         # Prepare context of top picks and red alerts
         top_picks = []
         if not active_df.empty:
@@ -187,16 +269,29 @@ def discuss_with_jarvis(user_message, chat_history, active_df, page_mode="page_1
         system_instructions += f"\n\nActive Market Context:\nTop 5 Scored Picks: {top_picks}\nActive Blacklisted Stocks (Red Alerts): {red_alerts}\n"
         
         # Format conversation history for prompt
-        conversation_prompt = system_instructions + "\nConversation History:\n"
+        conversation_prompt = "Conversation History:\n"
         for role, msg in chat_history[-6:]: # Keep last 6 messages
             conversation_prompt += f"{role}: {msg}\n"
             
         conversation_prompt += f"User (Gurjas): {user_message}\nJarvis:"
         
-        response = model.generate_content(conversation_prompt)
+        if provider == "groq":
+            res = call_groq_api(conversation_prompt, key, system_instruction=system_instructions)
+            if res: return res
+            return "Jarvis (Groq) is compiling data... Please repeat that."
+        elif provider == "grok":
+            res = call_grok_xai_api(conversation_prompt, key, system_instruction=system_instructions)
+            if res: return res
+            return "Jarvis (Grok) is compiling data... Please repeat that."
+            
+        # Default to Gemini
+        genai.configure(api_key=key)
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        full_prompt = system_instructions + "\n" + conversation_prompt
+        response = model.generate_content(full_prompt)
         if response and response.text:
             return response.text.strip()
-        return "Jarvis is compiling data... Please repeat that."
+        return "Jarvis (Gemini) is compiling data... Please repeat that."
         
     except Exception as e:
         return f"Jarvis Connection Error: {str(e)}. Please check your API key validity."

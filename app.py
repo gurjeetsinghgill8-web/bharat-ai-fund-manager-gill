@@ -22,92 +22,99 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# ------------------ STYLING & AESTHETICS (JARVIS STYLE) ------------------
+# ------------------ STYLING & AESTHETICS (LIGHT SKY BLUE JARVIS STYLE) ------------------
 st.markdown("""
 <style>
-    /* Dark Theme Core */
+    /* Light Theme Core */
     .stApp {
-        background-color: #030637;
-        color: #F1F6F9;
+        background-color: #E2F1F8;
+        color: #0F172A;
         font-family: 'Outfit', sans-serif;
     }
     
     /* Headers styling */
     h1, h2, h3 {
-        color: #008DDA !important;
+        color: #0369A1 !important;
         font-weight: 700;
-        text-shadow: 0px 0px 10px rgba(0, 141, 218, 0.4);
+        text-shadow: 0px 0px 8px rgba(3, 105, 161, 0.2);
     }
     
-    /* Metrics Card Jarvis style */
+    /* Metrics Card Light style */
     .metric-container {
-        background: rgba(15, 23, 42, 0.6);
-        border: 1px solid #008DDA;
+        background: rgba(255, 255, 255, 0.9);
+        border: 1px solid #7DD3FC;
         border-radius: 10px;
         padding: 15px;
-        box-shadow: 0 4px 15px rgba(0, 141, 218, 0.15);
+        box-shadow: 0 4px 15px rgba(14, 165, 233, 0.1);
         text-align: center;
     }
     
     .metric-value {
         font-size: 2rem;
         font-weight: bold;
-        color: #00F0FF;
-        text-shadow: 0px 0px 8px rgba(0, 240, 255, 0.5);
+        color: #0284C7;
+        text-shadow: 0px 0px 5px rgba(2, 132, 199, 0.2);
     }
     
     .metric-label {
         font-size: 0.9rem;
-        color: #AEB5C0;
+        color: #475569;
         text-transform: uppercase;
         margin-top: 5px;
     }
     
     /* Sidebar styling */
     section[data-testid="stSidebar"] {
-        background-color: #020024 !important;
-        border-right: 1px solid #008DDA;
+        background-color: #CFE2FE !important;
+        border-right: 1px solid #93C5FD;
+    }
+    
+    /* Force sidebar text to be dark for readability */
+    section[data-testid="stSidebar"] * {
+        color: #1E293B !important;
     }
     
     /* Buttons styling */
     .stButton>button {
-        background: linear-gradient(135deg, #008DDA, #415A77) !important;
+        background: linear-gradient(135deg, #0284C7, #0369A1) !important;
         color: white !important;
-        border: 1px solid #00F0FF !important;
+        border: 1px solid #7DD3FC !important;
         border-radius: 5px !important;
         padding: 8px 16px !important;
-        box-shadow: 0px 0px 10px rgba(0, 240, 255, 0.2) !important;
+        box-shadow: 0px 0px 10px rgba(14, 165, 233, 0.1) !important;
         transition: all 0.3s ease;
     }
     .stButton>button:hover {
-        box-shadow: 0px 0px 15px rgba(0, 240, 255, 0.6) !important;
+        box-shadow: 0px 0px 15px rgba(14, 165, 233, 0.4) !important;
         transform: translateY(-2px);
     }
     
-    /* Glowing alert tags */
+    /* Red alert tags */
     .red-alert-card {
-        background: rgba(120, 0, 0, 0.3);
-        border: 1px solid #FF0055;
+        background: rgba(239, 68, 68, 0.1);
+        border: 1px solid #EF4444;
         border-radius: 8px;
         padding: 12px;
-        color: #FFCCD5;
-        box-shadow: 0 4px 10px rgba(255, 0, 85, 0.2);
+        color: #991B1B;
+        box-shadow: 0 4px 10px rgba(239, 68, 68, 0.05);
     }
     
     /* Jarvis Chat Container */
     .chat-bubble-jarvis {
-        background: rgba(0, 141, 218, 0.15);
-        border-left: 3px solid #008DDA;
+        background: rgba(14, 165, 233, 0.1);
+        border-left: 4px solid #0EA5E9;
         padding: 10px;
         border-radius: 5px;
         margin-bottom: 8px;
+        color: #0F172A;
     }
     .chat-bubble-user {
-        background: rgba(255, 255, 255, 0.05);
-        border-left: 3px solid #AEB5C0;
+        background: rgba(255, 255, 255, 0.7);
+        border-left: 4px solid #64748B;
         padding: 10px;
         border-radius: 5px;
         margin-bottom: 8px;
+        color: #0F172A;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -297,7 +304,7 @@ else:
                             y=hist_prices,
                             title=f"{selected_ticker.replace('.NS', '')} - 6 Month Trend",
                             labels={"y": "Price (₹)", "x": "Days"},
-                            template="plotly_dark"
+                            template="plotly_white"
                         )
                         fig.update_traces(line_color='#008DDA')
                         st.plotly_chart(fig, use_container_width=True)
@@ -318,7 +325,7 @@ else:
                         values="Share %", 
                         names="Holder", 
                         color_discrete_sequence=['#0B192C', '#008DDA', '#FFCCD5'],
-                        template="plotly_dark"
+                        template="plotly_white"
                     )
                     st.plotly_chart(fig_pie, use_container_width=True)
 
@@ -447,7 +454,7 @@ else:
                     color="Engine",
                     color_discrete_sequence=['#008DDA', '#415A77'],
                     title="Strategy vs Benchmark Cumulative Return Comparison",
-                    template="plotly_dark"
+                    template="plotly_white"
                 )
                 st.plotly_chart(fig_compare, use_container_width=True)
             else:
@@ -589,7 +596,7 @@ else:
                         sma_val = row_data["200 SMA"]
                         if sma_val > 0:
                             fig.add_trace(go.Scatter(y=[sma_val]*len(hist_prices), name="200 SMA", line=dict(color='#FF0055', dash='dash')))
-                        fig.update_layout(title=f"{selected_ticker.replace('.NS', '')} - Price vs 200 SMA Level", template="plotly_dark")
+                        fig.update_layout(title=f"{selected_ticker.replace('.NS', '')} - Price vs 200 SMA Level", template="plotly_white")
                         st.plotly_chart(fig, use_container_width=True)
                 
                 with col_right:
@@ -607,7 +614,7 @@ else:
                         values="Share %", 
                         names="Holder", 
                         color_discrete_sequence=['#0B192C', '#008DDA', '#FFCCD5'],
-                        template="plotly_dark"
+                        template="plotly_white"
                     )
                     st.plotly_chart(fig_pie, use_container_width=True)
 
@@ -723,7 +730,7 @@ else:
                     color="Engine",
                     color_discrete_sequence=['#008DDA', '#415A77'],
                     title="Strategy vs Benchmark Cumulative Return Comparison",
-                    template="plotly_dark"
+                    template="plotly_white"
                 )
                 st.plotly_chart(fig_compare, use_container_width=True)
             else:

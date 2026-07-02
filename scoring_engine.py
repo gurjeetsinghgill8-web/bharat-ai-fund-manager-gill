@@ -106,6 +106,29 @@ def score_stock(stock_data):
         if min_180 >= 0.80 * max_180:
             momentum_status = "Sustained High (6 Months)"
 
+    # 8. CAGR Acceleration Check (Growth Momentum)
+    sales_cagr_5y = calculate_cagr_for_years(sales_hist, 4)
+    sales_cagr_3y = calculate_cagr_for_years(sales_hist, 2)
+    sales_cagr_all = calculate_cagr(sales_hist)
+    profit_cagr_5y = calculate_cagr_for_years(profit_hist, 4)
+    profit_cagr_3y = calculate_cagr_for_years(profit_hist, 2)
+    profit_cagr_all = calculate_cagr(profit_hist)
+
+    # Condition: Sales growth 3Years > Sales growth 5Years AND Sales growth > Sales growth 3Years
+    sales_growth_accelerating = False
+    if (sales_cagr_3y is not None and sales_cagr_5y is not None and sales_cagr_all is not None
+            and sales_cagr_3y > sales_cagr_5y and sales_cagr_all > sales_cagr_3y):
+        sales_growth_accelerating = True
+
+    # Condition: Profit growth > 10 AND Profit growth 3Years > Profit growth 5Years AND Profit growth > Profit growth 3Years
+    profit_growth_accelerating = False
+    if (profit_cagr_all is not None and profit_cagr_3y is not None and profit_cagr_5y is not None
+            and profit_cagr_all > 10.0 and profit_cagr_3y > profit_cagr_5y and profit_cagr_all > profit_cagr_3y):
+        profit_growth_accelerating = True
+
+    # Overall CAGR Accelerating Flag
+    cagr_accelerating = sales_growth_accelerating and profit_growth_accelerating
+
     return {
         "Ticker": ticker,
         "Category": get_category(ticker),
@@ -127,7 +150,16 @@ def score_stock(stock_data):
         "Reserves": round(stock_data["reserves"] / 10000000.0, 2) if stock_data["reserves"] else 0.0, # in Crores
         "Promoter %": round(stock_data["promoter_share"], 1),
         "Institution %": round(stock_data["inst_share"], 1),
-        "Public %": round(stock_data["public_share"], 1)
+        "Public %": round(stock_data["public_share"], 1),
+        "Sales CAGR": round(sales_cagr_all, 2) if sales_cagr_all is not None else 0.0,
+        "Sales CAGR 3Y": round(sales_cagr_3y, 2) if sales_cagr_3y is not None else 0.0,
+        "Sales CAGR 5Y": round(sales_cagr_5y, 2) if sales_cagr_5y is not None else 0.0,
+        "Profit CAGR": round(profit_cagr_all, 2) if profit_cagr_all is not None else 0.0,
+        "Profit CAGR 3Y": round(profit_cagr_3y, 2) if profit_cagr_3y is not None else 0.0,
+        "Profit CAGR 5Y": round(profit_cagr_5y, 2) if profit_cagr_5y is not None else 0.0,
+        "Sales Growth Accelerating": sales_growth_accelerating,
+        "Profit Growth Accelerating": profit_growth_accelerating,
+        "CAGR Accelerating": cagr_accelerating
     }
 
 def run_scoring(batch_data):
@@ -170,6 +202,23 @@ def calculate_cagr(history):
         return ((latest / oldest) ** (1 / n) - 1) * 100.0
     except Exception:
         return 0.0
+
+def calculate_cagr_for_years(history, years):
+    """
+    Calculates CAGR over the last N years from the history list.
+    history[0] = latest year, history[-1] = oldest year.
+    Returns the CAGR percentage.
+    """
+    if not history or len(history) < years + 1:
+        return None
+    latest = history[0]
+    oldest = history[years]  # years ago
+    if oldest <= 0 or latest <= 0:
+        return None
+    try:
+        return ((latest / oldest) ** (1 / years) - 1) * 100.0
+    except Exception:
+        return None
 
 def score_stock_v2(stock_data):
     """
@@ -292,6 +341,29 @@ def score_stock_v2(stock_data):
         elif min_180 >= 0.80 * max_180:
             momentum_status = "Sustained High (6 Months)"
 
+    # 8. CAGR Acceleration Check (Growth Momentum)
+    sales_cagr_5y = calculate_cagr_for_years(sales_hist, 4)
+    sales_cagr_3y = calculate_cagr_for_years(sales_hist, 2)
+    sales_cagr_all = sales_cagr  # Already computed above
+    profit_cagr_5y = calculate_cagr_for_years(profit_hist, 4)
+    profit_cagr_3y = calculate_cagr_for_years(profit_hist, 2)
+    profit_cagr_all = profit_cagr  # Already computed above
+
+    # Condition: Sales growth 3Years > Sales growth 5Years AND Sales growth > Sales growth 3Years
+    sales_growth_accelerating = False
+    if (sales_cagr_3y is not None and sales_cagr_5y is not None and sales_cagr_all is not None
+            and sales_cagr_3y > sales_cagr_5y and sales_cagr_all > sales_cagr_3y):
+        sales_growth_accelerating = True
+
+    # Condition: Profit growth > 10 AND Profit growth 3Years > Profit growth 5Years AND Profit growth > Profit growth 3Years
+    profit_growth_accelerating = False
+    if (profit_cagr_all is not None and profit_cagr_3y is not None and profit_cagr_5y is not None
+            and profit_cagr_all > 10.0 and profit_cagr_3y > profit_cagr_5y and profit_cagr_all > profit_cagr_3y):
+        profit_growth_accelerating = True
+
+    # Overall CAGR Accelerating Flag
+    cagr_accelerating = sales_growth_accelerating and profit_growth_accelerating
+
     return {
         "Ticker": ticker,
         "Category": get_category(ticker),
@@ -302,10 +374,17 @@ def score_stock_v2(stock_data):
         "EPS": round(eps, 2),
         "Sales Score": sales_score,
         "Profit Score": profit_score,
-        "Sales CAGR": round(sales_cagr, 2),
+        "Sales CAGR": round(sales_cagr, 2) if sales_cagr else 0.0,
+        "Sales CAGR 3Y": round(sales_cagr_3y, 2) if sales_cagr_3y is not None else 0.0,
+        "Sales CAGR 5Y": round(sales_cagr_5y, 2) if sales_cagr_5y is not None else 0.0,
         "Sales CAGR Score": sales_cagr_score,
-        "Profit CAGR": round(profit_cagr, 2),
+        "Profit CAGR": round(profit_cagr, 2) if profit_cagr else 0.0,
+        "Profit CAGR 3Y": round(profit_cagr_3y, 2) if profit_cagr_3y is not None else 0.0,
+        "Profit CAGR 5Y": round(profit_cagr_5y, 2) if profit_cagr_5y is not None else 0.0,
         "Profit CAGR Score": profit_cagr_score,
+        "Sales Growth Accelerating": sales_growth_accelerating,
+        "Profit Growth Accelerating": profit_growth_accelerating,
+        "CAGR Accelerating": cagr_accelerating,
         "Value Fit": value_fit,
         "Total Score": total_score,
         "Red Alert": is_red_alert,

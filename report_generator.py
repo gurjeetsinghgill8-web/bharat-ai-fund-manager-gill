@@ -72,17 +72,26 @@ def generate_stock_narrative(ticker, row_data):
     promoters = row_data["Promoter %"]
     inst = row_data["Institution %"]
     public = row_data["Public %"]
+    sales_cagr = row_data.get("Sales CAGR", 0)
+    profit_cagr = row_data.get("Profit CAGR", 0)
+    cagr_accel = row_data.get("CAGR Accelerating", False)
     
     # Financial health status
     debt_msg = "debt-free / very low debt" if debt < 0.3 else ("manageable debt" if debt < 1.0 else "high debt leverage")
     reserves_msg = f"strong reserves of {reserves} Cr" if reserves > 10 else f"reserves of {reserves} Cr"
+    cagr_msg = ""
+    if cagr_accel:
+        cagr_msg = f" Moreover, the company's growth is accelerating — Sales CAGR is {sales_cagr}% and Profit CAGR is {profit_cagr}%, with the 3-year CAGR outpacing the 5-year CAGR, indicating strong recent momentum. "
+    elif sales_cagr > 0 or profit_cagr > 0:
+        cagr_msg = f" The company shows sales CAGR of {sales_cagr}% and profit CAGR of {profit_cagr}%. "
     
     story = (
         f"<b>{company_name}</b> is currently trading at ₹{price}. "
         f"It has achieved a spectacular performance rating of <b>{score}/20</b> on the Bharat AI scale. "
         f"The company has exceptionally strong fundamentals: it has a {debt_msg} (D/E: {debt}) and {reserves_msg}. "
         f"Institutions (FII & DII) hold {inst}%, showing strong institutional confidence, while Promoters hold {promoters}%. "
-        f"With an EPS of {eps} and PE of {pe}, this stock displays classic high-velocity growth. "
+        f"With an EPS of {eps} and PE of {pe}, this stock displays classic high-velocity growth."
+        f"{cagr_msg}"
         f"At a 10th-grade level, you can think of {company_name} as a fast-growing, highly profitable shop that has zero trouble paying its bills, "
         f"is backed by heavy-pocket investors, and is breaking historical sales records. It is a prime candidate for momentum buying."
     )
@@ -259,16 +268,21 @@ def generate_stock_narrative_v2(ticker, row_data):
     sma_200 = row_data["200 SMA"]
     dist_pct = row_data["200 SMA Dist %"]
     value_fit = row_data["Value Fit"]
+    cagr_accel = row_data.get("CAGR Accelerating", False)
     
     debt_msg = "debt-free / very low debt" if debt < 0.3 else ("manageable debt" if debt < 1.0 else "high debt leverage")
     reserves_msg = f"strong reserves of {reserves} Cr" if reserves > 10 else f"reserves of {reserves} Cr"
     value_fit_msg = "It has a great value-momentum fit (PE is less than EPS)." if value_fit else "PE is higher than EPS."
+    cagr_msg = ""
+    if cagr_accel:
+        cagr_msg = f" Best of all, the growth trajectory is accelerating — the 3-year CAGR is outpacing the 5-year CAGR, meaning the company is growing faster now than it did in the past. "
     
     story = (
         f"<b>{company_name}</b> is currently trading at ₹{price}. "
         f"It has achieved a value-momentum rating of <b>{score}/16</b> on the Bharat AI scale. "
         f"The price is sitting just {dist_pct}% away from its 200-day average price (₹{sma_200}), which is an attractive consolidation point. "
         f"The company has strong growth fundamentals, growing its annual sales at a CAGR of {sales_cagr}% and net profits at a CAGR of {profit_cagr}%. "
+        f"{cagr_msg}"
         f"It has a {debt_msg} (D/E: {debt}) and {reserves_msg}. Promoter group holds {promoters}% and institutional investors hold {inst}%. "
         f"{value_fit_msg} At a 10th-grade level, this is like buying a healthy, fast-growing franchise at a very reasonable average price instead of chasing it at all-time highs."
     )

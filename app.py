@@ -274,9 +274,11 @@ else:
             st.write("Click on any row symbol in the dropdown below to trigger the Jarvis gen AI narrative breakdown.")
             
             # Display table
-            display_cols = ["Ticker", "Category", "Price", "ATH", "3Y High", "Total Score", "PE", "EPS", "Momentum Status"]
+            df_display = df.copy()
+            df_display["CAGR Accelerating"] = df_display["CAGR Accelerating"].map({True: "✅", False: ""})
+            display_cols = ["Ticker", "Category", "Price", "ATH", "3Y High", "Total Score", "CAGR Accelerating", "PE", "EPS", "Momentum Status"]
             st.dataframe(
-                df[display_cols],
+                df_display[display_cols],
                 use_container_width=True
             )
             
@@ -310,6 +312,23 @@ else:
                         st.plotly_chart(fig, use_container_width=True)
                 
                 with col_right:
+                    st.markdown("#### CAGR Acceleration")
+                    cagr_accel = row_data.get("CAGR Accelerating", False)
+                    if cagr_accel:
+                        st.success("✅ Sales & Profit Growth Accelerating")
+                    else:
+                        st.warning("⚠️ Growth not accelerating")
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        st.metric("Sales CAGR", f'{row_data.get("Sales CAGR", 0):.1f}%')
+                        st.metric("Sales CAGR 3Y", f'{row_data.get("Sales CAGR 3Y", 0):.1f}%')
+                        st.metric("Sales CAGR 5Y", f'{row_data.get("Sales CAGR 5Y", 0):.1f}%')
+                    with c2:
+                        st.metric("Profit CAGR", f'{row_data.get("Profit CAGR", 0):.1f}%')
+                        st.metric("Profit CAGR 3Y", f'{row_data.get("Profit CAGR 3Y", 0):.1f}%')
+                        st.metric("Profit CAGR 5Y", f'{row_data.get("Profit CAGR 5Y", 0):.1f}%')
+                    
+                    st.markdown("---")
                     st.markdown("#### Balance Sheet & Holders")
                     st.metric("Debt-to-Equity Ratio", f"{row_data['Debt/Equity']}")
                     st.metric("Reserves (Cr)", f"₹{row_data['Reserves']} Cr")
@@ -563,13 +582,14 @@ else:
                 df = df.sort_values(by="Total Score", ascending=False)
                 
             # Display table
-            display_cols = ["Ticker", "Category", "Price", "Total Score", "Double ATH Status", "200 SMA", "200 SMA Dist %", "Sales CAGR", "Profit CAGR", "PE", "EPS", "Value Fit"]
+            display_cols = ["Ticker", "Category", "Price", "Total Score", "Double ATH Status", "CAGR Accelerating", "200 SMA", "200 SMA Dist %", "Sales CAGR", "Profit CAGR", "PE", "EPS", "Value Fit"]
             display_df = df.copy() if not df.empty else pd.DataFrame(columns=display_cols)
             if not display_df.empty:
                 display_df["Double ATH Status"] = display_df.apply(
                     lambda r: "🟢 Double Peak" if r["Sales Score"] == 5 and r["Profit Score"] == 5 else "🔴 ALERT: Not Peak",
                     axis=1
                 )
+                display_df["CAGR Accelerating"] = display_df["CAGR Accelerating"].map({True: "✅ Growth Accelerating", False: ""})
                 display_df["Value Fit"] = display_df["Value Fit"].map({True: "⭐", False: ""})
                 display_df = display_df[display_cols]
                 
@@ -620,6 +640,23 @@ else:
                         st.plotly_chart(fig, use_container_width=True)
                 
                 with col_right:
+                    st.markdown("#### CAGR Acceleration")
+                    cagr_accel = row_data.get("CAGR Accelerating", False)
+                    if cagr_accel:
+                        st.success("✅ Sales & Profit Growth Accelerating")
+                    else:
+                        st.warning("⚠️ Growth not accelerating")
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        st.metric("Sales CAGR", f'{row_data.get("Sales CAGR", 0):.1f}%')
+                        st.metric("Sales CAGR 3Y", f'{row_data.get("Sales CAGR 3Y", 0):.1f}%')
+                        st.metric("Sales CAGR 5Y", f'{row_data.get("Sales CAGR 5Y", 0):.1f}%')
+                    with c2:
+                        st.metric("Profit CAGR", f'{row_data.get("Profit CAGR", 0):.1f}%')
+                        st.metric("Profit CAGR 3Y", f'{row_data.get("Profit CAGR 3Y", 0):.1f}%')
+                        st.metric("Profit CAGR 5Y", f'{row_data.get("Profit CAGR 5Y", 0):.1f}%')
+                    
+                    st.markdown("---")
                     st.markdown("#### Balance Sheet & Holders")
                     st.metric("Debt-to-Equity Ratio", f"{row_data['Debt/Equity']}")
                     st.metric("Reserves (Cr)", f"₹{row_data['Reserves']} Cr")

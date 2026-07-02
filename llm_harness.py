@@ -136,6 +136,9 @@ def generate_ai_narrative(ticker, row_data):
     Debt-to-Equity Ratio: {row_data['Debt/Equity']}
     Reserves: ₹{row_data['Reserves']} Crores
     Shareholding Pattern: Promoter={row_data['Promoter %']}%, Institutions={row_data['Institution %']}%, Public={row_data['Public %']}%
+    Sales CAGR: {row_data.get('Sales CAGR', 0)}% (3Y: {row_data.get('Sales CAGR 3Y', 0)}%, 5Y: {row_data.get('Sales CAGR 5Y', 0)}%)
+    Profit CAGR: {row_data.get('Profit CAGR', 0)}% (3Y: {row_data.get('Profit CAGR 3Y', 0)}%, 5Y: {row_data.get('Profit CAGR 5Y', 0)}%)
+    Growth Accelerating (CAGR 3Y > CAGR 5Y & Overall CAGR > CAGR 3Y): {'Yes' if row_data.get('CAGR Accelerating', False) else 'No'}
     
     Instructions:
     1. Keep it under 150 words.
@@ -187,8 +190,11 @@ def generate_ai_narrative_v2(ticker, row_data):
     Total Score on our Value/SMA Engine: {row_data['Total Score']}/16
     Sales Score: {row_data['Sales Score']}/5
     Profit Score: {row_data['Profit Score']}/5
-    Sales CAGR (Compounded Annual growth rate): {row_data['Sales CAGR']}% (Score: {row_data['Sales CAGR Score']}/3)
-    Profit CAGR (Compounded Annual growth rate): {row_data['Profit CAGR']}% (Score: {row_data['Profit CAGR Score']}/3)
+    Sales CAGR (Compounded Annual growth rate): {row_data['Sales CAGR']}% (3Y: {row_data.get('Sales CAGR 3Y', 0)}%, 5Y: {row_data.get('Sales CAGR 5Y', 0)}%)
+    Profit CAGR (Compounded Annual growth rate): {row_data['Profit CAGR']}% (3Y: {row_data.get('Profit CAGR 3Y', 0)}%, 5Y: {row_data.get('Profit CAGR 5Y', 0)}%)
+    Sales CAGR Score: {row_data['Sales CAGR Score']}/3
+    Profit CAGR Score: {row_data['Profit CAGR Score']}/3
+    Growth Accelerating (CAGR 3Y > CAGR 5Y & Overall CAGR > CAGR 3Y): {'Yes' if row_data.get('CAGR Accelerating', False) else 'No'}
     Value Fit (PE < EPS): {'Yes' if row_data['Value Fit'] else 'No'}
     PE Ratio: {row_data['PE']}
     Earnings Per Share (EPS): {row_data['EPS']}

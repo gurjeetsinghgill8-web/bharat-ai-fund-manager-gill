@@ -9,3 +9,5 @@ requests
 reportlab
 google-generativeai
 matplotlib
+websockets
+win10toast

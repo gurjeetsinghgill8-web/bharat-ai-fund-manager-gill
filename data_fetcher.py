@@ -2,6 +2,7 @@ import os
 import time
 import pickle
 import datetime
+import concurrent.futures
 import yfinance as yf
 import pandas as pd
 from dotenv import load_dotenv
@@ -168,6 +169,10 @@ def get_stock_data(ticker, force_refresh=False):
     return data
 
 def batch_update_stocks(tickers, force_refresh=False, progress_callback=None):
+    """
+    Sequential batch fetch — one stock at a time with 0.1s sleep.
+    Best for small lists (< 200 stocks).
+    """
     results = {}
     total = len(tickers)
     for idx, ticker in enumerate(tickers):
@@ -176,5 +181,46 @@ def batch_update_stocks(tickers, force_refresh=False, progress_callback=None):
         data = get_stock_data(ticker, force_refresh=force_refresh)
         if data:
             results[ticker] = data
-        time.sleep(0.1) # Small sleep
+        time.sleep(0.1)
+    return results
+
+
+def batch_update_stocks_parallel(tickers, force_refresh=False, max_workers=10, progress_callback=None):
+    """
+    Parallel batch fetch using ThreadPoolExecutor.
+    Best for large lists (2000+ stocks) — ~30 seconds instead of ~3 minutes.
+    
+    Args:
+        tickers: list of ticker symbols
+        force_refresh: bypass cache if True
+        max_workers: number of parallel threads (default 10)
+        progress_callback: function(idx, total, ticker) for UI progress
+    
+    Returns:
+        dict of {ticker: stock_data}
+    """
+    results = {}
+    total = len(tickers)
+    completed = [0]  # mutable counter for callback
+    lock = [None]    # placeholder for thread safety (simplified)
+
+    def fetch_one(ticker):
+        data = get_stock_data(ticker, force_refresh=force_refresh)
+        return (ticker, data)
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {executor.submit(fetch_one, t): t for t in tickers}
+        for future in concurrent.futures.as_completed(futures):
+            ticker = futures[future]
+            try:
+                _, data = future.result()
+                if data:
+                    results[ticker] = data
+            except Exception as e:
+                print(f"Error fetching {ticker}: {e}")
+            
+            completed[0] += 1
+            if progress_callback:
+                progress_callback(completed[0], total, ticker)
+    
     return results

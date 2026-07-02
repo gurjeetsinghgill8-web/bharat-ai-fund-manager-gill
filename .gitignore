@@ -6,6 +6,7 @@ __pycache__/
 # Local Caching Data
 data_cache/
 *.pkl
+nse_tickers_cache.json
 
 # Secrets and Configurations
 .env

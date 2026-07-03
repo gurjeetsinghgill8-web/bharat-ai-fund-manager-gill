@@ -191,87 +191,87 @@ if "portfolio_refreshed" not in st.session_state:
 if "alert_stocks_triggered" not in st.session_state:
     st.session_state["alert_stocks_triggered"] = []
 
-    # ------------------ SCAN MODE SELECTOR ------------------
-    if "scan_mode" not in st.session_state:
-        st.session_state["scan_mode"] = "⚡ Core 127"
+# ------------------ SCAN MODE SELECTOR ------------------
+if "scan_mode" not in st.session_state:
+    st.session_state["scan_mode"] = "⚡ Core 127"
 
-    if "all_tickers" not in st.session_state:
-        st.session_state["all_tickers"] = get_all_tickers(use_full=False)
+if "all_tickers" not in st.session_state:
+    st.session_state["all_tickers"] = get_all_tickers(use_full=False)
 
-    # ------------------ SIDEBAR ------------------
-    st.sidebar.image("https://img.icons8.com/nolan/96/artificial-intelligence.png", width=90)
-    st.sidebar.title("BHARAT AI GILL")
-    st.sidebar.subheader("Jarvis Option/Fund Core v1.01")
+# ------------------ SIDEBAR ------------------
+st.sidebar.image("https://img.icons8.com/nolan/96/artificial-intelligence.png", width=90)
+st.sidebar.title("BHARAT AI GILL")
+st.sidebar.subheader("Jarvis Option/Fund Core v1.01")
 
-    # Show Jarvis status in Sidebar
-    if has_active_api_key():
-        st.sidebar.markdown("🧠 **AI Brain Status:** <span style='color:#00FF66;'>🟢 Jarvis Online</span>", unsafe_allow_html=True)
-    else:
-        st.sidebar.markdown("🧠 **AI Brain Status:** <span style='color:#FF0055;'>🔴 Jarvis Offline</span>", unsafe_allow_html=True)
-        st.sidebar.info("Add a Google Gemini key in `api_key.txt` or `.env` to wake Jarvis up.")
+# Show Jarvis status in Sidebar
+if has_active_api_key():
+    st.sidebar.markdown("🧠 **AI Brain Status:** <span style='color:#00FF66;'>🟢 Jarvis Online</span>", unsafe_allow_html=True)
+else:
+    st.sidebar.markdown("🧠 **AI Brain Status:** <span style='color:#FF0055;'>🔴 Jarvis Offline</span>", unsafe_allow_html=True)
+    st.sidebar.info("Add a Google Gemini key in `api_key.txt` or `.env` to wake Jarvis up.")
 
-    st.sidebar.markdown("---")
-    st.sidebar.write("⚡ **Control Center**")
+st.sidebar.markdown("---")
+st.sidebar.write("⚡ **Control Center**")
 
-    # Scan mode toggle
-    scan_mode = st.sidebar.radio(
-        "Scan Mode",
-        ["⚡ Core 127", "🌐 Full Universe 2000+"],
-        index=0 if st.session_state["scan_mode"] == "⚡ Core 127" else 1,
-        help="Core 127: Quick scan of hand-picked stocks. Full Universe: 2000+ NSE stocks (takes ~30s)."
-    )
+# Scan mode toggle
+scan_mode = st.sidebar.radio(
+    "Scan Mode",
+    ["⚡ Core 127", "🌐 Full Universe 2000+"],
+    index=0 if st.session_state["scan_mode"] == "⚡ Core 127" else 1,
+    help="Core 127: Quick scan of hand-picked stocks. Full Universe: 2000+ NSE stocks (takes ~30s)."
+)
 
-    # Update tickers if mode changed
-    if scan_mode != st.session_state["scan_mode"]:
-        st.session_state["scan_mode"] = scan_mode
-        use_full = "2000+" in scan_mode
-        st.session_state["all_tickers"] = get_all_tickers(use_full=use_full)
-        st.sidebar.info(f"Switched to {'2000+ Full Universe' if use_full else '127 Core Watchlist'} mode!")
+# Update tickers if mode changed
+if scan_mode != st.session_state["scan_mode"]:
+    st.session_state["scan_mode"] = scan_mode
+    use_full = "2000+" in scan_mode
+    st.session_state["all_tickers"] = get_all_tickers(use_full=use_full)
+    st.sidebar.info(f"Switched to {'2000+ Full Universe' if use_full else '127 Core Watchlist'} mode!")
 
-    all_tickers = st.session_state["all_tickers"]
+all_tickers = st.session_state["all_tickers"]
 
-    if st.sidebar.button("Run System Scan (Pull Data)"):
-        progress_bar = st.sidebar.progress(0.0)
-        status_text = st.sidebar.empty()
+if st.sidebar.button("Run System Scan (Pull Data)"):
+    progress_bar = st.sidebar.progress(0.0)
+    status_text = st.sidebar.empty()
 
-        def update_prog(idx, total, ticker):
-            pct = float(idx + 1) / total
-            progress_bar.progress(pct)
-            status_text.write(f"Scrubbing: `{ticker}` ({idx+1}/{total})")
-
-        use_full = "2000+" in scan_mode
-        if use_full:
-            st.sidebar.info("🌐 Full universe scan in progress (parallel engine active)...")
-            results = batch_update_stocks_parallel(all_tickers, force_refresh=True, max_workers=10, progress_callback=update_prog)
-        else:
-            results = batch_update_stocks(all_tickers, force_refresh=True, progress_callback=update_prog)
-        st.session_state["stock_cache"] = results
-        st.session_state["last_update"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
-        st.sidebar.success("Scan Complete!")
-
-    # Check cache status on load
-    if not st.session_state["stock_cache"]:
-        results = {}
-        for ticker in all_tickers:
-            data = get_stock_data(ticker, force_refresh=False)
-            if data:
-                results[ticker] = data
-        st.session_state["stock_cache"] = results
-        st.session_state["last_update"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
-
-    last_up = st.session_state["last_update"] or "Never"
-    st.sidebar.caption(f"Last data sync: {last_up}")
-    st.sidebar.caption(f"Universe: {len(all_tickers)} stocks")
-
-    # Filter selections
-    st.sidebar.markdown("---")
-    engine_page = st.sidebar.radio("Navigation", ["⚡ Page 1: Momentum & Breakout", "🔍 Page 2: Value & 200 SMA"])
+    def update_prog(idx, total, ticker):
+        pct = float(idx + 1) / total
+        progress_bar.progress(pct)
+        status_text.write(f"Scrubbing: `{ticker}` ({idx+1}/{total})")
 
     use_full = "2000+" in scan_mode
-    st.sidebar.markdown("---")
-    st.sidebar.write("⚙️ **Global Filter Options**")
-    from symbols import get_all_categories
-    selected_cap = st.sidebar.selectbox("Market Cap Universe", get_all_categories(use_full=use_full))
+    if use_full:
+        st.sidebar.info("🌐 Full universe scan in progress (parallel engine active)...")
+        results = batch_update_stocks_parallel(all_tickers, force_refresh=True, max_workers=10, progress_callback=update_prog)
+    else:
+        results = batch_update_stocks(all_tickers, force_refresh=True, progress_callback=update_prog)
+    st.session_state["stock_cache"] = results
+    st.session_state["last_update"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    st.sidebar.success("Scan Complete!")
+
+# Check cache status on load
+if not st.session_state["stock_cache"]:
+    results = {}
+    for ticker in all_tickers:
+        data = get_stock_data(ticker, force_refresh=False)
+        if data:
+            results[ticker] = data
+    st.session_state["stock_cache"] = results
+    st.session_state["last_update"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+
+last_up = st.session_state["last_update"] or "Never"
+st.sidebar.caption(f"Last data sync: {last_up}")
+st.sidebar.caption(f"Universe: {len(all_tickers)} stocks")
+
+# Filter selections
+st.sidebar.markdown("---")
+engine_page = st.sidebar.radio("Navigation", ["⚡ Page 1: Momentum & Breakout", "🔍 Page 2: Value & 200 SMA"])
+
+use_full = "2000+" in scan_mode
+st.sidebar.markdown("---")
+st.sidebar.write("⚙️ **Global Filter Options**")
+from symbols import get_all_categories
+selected_cap = st.sidebar.selectbox("Market Cap Universe", get_all_categories(use_full=use_full))
 
 if engine_page == "⚡ Page 1: Momentum & Breakout":
     min_score = st.sidebar.slider("Minimum Quality Score", 0, 20, 10)

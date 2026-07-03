@@ -1,0 +1,38 @@
+# ══════════════════════════════════════════════════════════════
+# JARVIS API KEYS CONFIGURATION
+# ══════════════════════════════════════════════════════════════
+# Jarvis will try providers in this order:
+#   1. Groq (gsk_...) — fastest, free tier available
+#   2. xAI/Grok (xai-...) — fallback if Groq fails
+#   3. Gemini (AIzaSy...) — final fallback
+#
+# NOTE: This file is .gitignored — it will NOT be pushed to GitHub.
+# ══════════════════════════════════════════════════════════════
+
+# ── OPTION A: GROQ API KEY (RECOMMENDED) ──
+# Get free key from: https://console.groq.com/keys
+# Free tier: 30 req/min on llama-3.1 models
+GROQ_API_KEY=
+
+# ── OPTION B: xAI / GROK API KEY (BACKUP) ──
+# Get key from: https://console.x.ai/
+XAI_API_KEY=
+
+# ── OPTION C: GOOGLE GEMINI API KEY ──
+# Get free key from: https://aistudio.google.com/app/apikey
+GEMINI_API_KEY=
+
+# ── SYSTEM ENVIRONMENT VARIABLES (For 24/7 operations) ──
+# If you want Jarvis to work even when laptop is closed / VPS mode,
+# set these same variables as Windows System Environment Variables:
+#
+#   Variable: JARVIS_GROQ_KEY
+#   Variable: JARVIS_XAI_KEY
+#   Variable: JARVIS_GEMINI_KEY
+#
+# To set them:
+#   1. Press Win + R, type: sysdm.cpl
+#   2. Go to "Advanced" tab → "Environment Variables"
+#   3. Under "System variables", click "New" and add each key
+#   4. Restart your terminal/Streamlit
+# ══════════════════════════════════════════════════════════════

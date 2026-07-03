@@ -1,56 +1,147 @@
+"""
+llm_harness.py — JARVIS AI BRAIN v2.0
+══════════════════════════════════════════════════════════════
+Dual-Provider LLM Harness with Auto-Failover
+
+Key Features:
+  - Reads keys from: jarvis_keys.txt → .env → Windows System Environment Variables
+  - Provider order: Groq → xAI/Grok → Gemini → Local Fallback
+  - Works 24/7 even when laptop is closed (via System Environment Variables)
+  - Auto-failover: if one provider fails, next one is tried automatically
+
+How to set System Environment Variables for 24/7 operation:
+  Press Win+R → sysdm.cpl → Advanced → Environment Variables → System variables → New
+  - Variable: JARVIS_GROQ_KEY    Value: gsk_your_groq_key
+  - Variable: JARVIS_XAI_KEY     Value: xai_your_xai_key
+  - Variable: JARVIS_GEMINI_KEY  Value: AIzaSy_your_gemini_key
+══════════════════════════════════════════════════════════════
+"""
 import os
-import google.generativeai as genai
+import json
+import requests
 from dotenv import load_dotenv
 
 load_dotenv()
 
+# ══════════════════════════════════════════════════════════════
+# KEY LOADER — Reads from 3 sources in priority order
+# ══════════════════════════════════════════════════════════════
+
+def _read_jarvis_keys_file():
+    """Parse jarvis_keys.txt and return a dict of keys found."""
+    keys = {}
+    try:
+        with open("jarvis_keys.txt", "r") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    parts = line.split("=", 1)
+                    key_name = parts[0].strip()
+                    key_val = parts[1].strip()
+                    if key_val and len(key_val) > 5:
+                        keys[key_name] = key_val
+    except FileNotFoundError:
+        pass
+    except Exception:
+        pass
+    return keys
+
+
+def _load_api_key_from_env(key_name):
+    """Try to load a key from .env file."""
+    return os.getenv(key_name, "").strip()
+
+
+def _load_api_key_from_system(key_name):
+    """Try to load a key from Windows System Environment Variables.
+    These persist even when laptop is closed and work in background/VPS mode.
+    """
+    system_var_map = {
+        "GROQ_API_KEY": "JARVIS_GROQ_KEY",
+        "XAI_API_KEY": "JARVIS_XAI_KEY",
+        "GEMINI_API_KEY": "JARVIS_GEMINI_KEY",
+    }
+    sys_var = system_var_map.get(key_name)
+    if sys_var:
+        return os.environ.get(sys_var, "").strip()
+    return ""
+
+
+def get_key(key_name):
+    """
+    Get a key from 3 sources in priority:
+      1. jarvis_keys.txt  (local file, gitignored)
+      2. .env              (local env file, gitignored)
+      3. Windows System Environment Variables  (24/7, survives reboot)
+    """
+    # Priority 1: jarvis_keys.txt
+    file_keys = _read_jarvis_keys_file()
+    if key_name in file_keys and file_keys[key_name]:
+        return file_keys[key_name]
+
+    # Priority 2: .env file
+    env_key = _load_api_key_from_env(key_name)
+    if env_key:
+        return env_key
+
+    # Priority 3: Windows System Environment Variables (24/7 mode)
+    sys_key = _load_api_key_from_system(key_name)
+    if sys_key:
+        return sys_key
+
+    return ""
+
+
+# Backward compatibility
 def load_api_key():
-    """
-    Tries to read the Gemini API key from api_key.txt first, then falls back to .env
-    """
-    key_path = "api_key.txt"
-    if os.path.exists(key_path):
-        try:
-            with open(key_path, "r") as f:
-                lines = f.readlines()
-                for line in lines:
-                    line = line.strip()
-                    if line and not line.startswith("#") and len(line) > 10:
-                        return line
-        except Exception:
-            pass
-            
-    # Fallback to env
-    return os.getenv("GEMINI_API_KEY") or os.getenv("GROQ_API_KEY") or os.getenv("GROK_API_KEY") or os.getenv("XAI_API_KEY")
+    """Legacy function — returns first available key from any provider."""
+    for provider in ["GROQ_API_KEY", "XAI_API_KEY", "GEMINI_API_KEY"]:
+        key = get_key(provider)
+        if key:
+            return key
+    return ""
+
 
 def has_active_api_key():
-    key = load_api_key()
-    return key is not None and len(key) > 5
+    """Check if at least one API key is configured."""
+    for provider in ["GROQ_API_KEY", "XAI_API_KEY", "GEMINI_API_KEY"]:
+        key = get_key(provider)
+        if key and len(key) > 5:
+            return True
+    return False
 
-# Initialize client if key exists
-api_key = load_api_key()
-if api_key and api_key.startswith("AIzaSy"):
-    genai.configure(api_key=api_key)
 
-import requests
-import json
+def get_active_provider():
+    """Return the first provider that has a valid key configured."""
+    if get_key("GROQ_API_KEY"):
+        return "groq"
+    if get_key("XAI_API_KEY"):
+        return "grok"
+    if get_key("GEMINI_API_KEY"):
+        return "gemini"
+    return None
+
 
 def get_provider_and_key():
-    key = load_api_key()
-    if not key:
+    """Legacy compatibility — returns first active provider and its key."""
+    provider = get_active_provider()
+    if not provider:
         return None, None
-    key = key.strip()
-    if key.startswith("gsk_"):
-        return "groq", key
-    elif key.startswith("xai-"):
-        return "grok", key
-    elif key.startswith("AIzaSy"):
-        return "gemini", key
-    else:
-        # Default fallback
-        return "gemini", key
+    
+    key_map = {
+        "groq": get_key("GROQ_API_KEY"),
+        "grok": get_key("XAI_API_KEY"),
+        "gemini": get_key("GEMINI_API_KEY"),
+    }
+    return provider, key_map.get(provider, "")
+
+
+# ══════════════════════════════════════════════════════════════
+# PROVIDER API CALLERS
+# ══════════════════════════════════════════════════════════════
 
 def call_groq_api(prompt, key, system_instruction=None):
+    """Call Groq API with llama-3.1-70b-versatile model."""
     url = "https://api.groq.com/openai/v1/chat/completions"
     headers = {
         "Authorization": f"Bearer {key}",
@@ -60,25 +151,27 @@ def call_groq_api(prompt, key, system_instruction=None):
     if system_instruction:
         messages.append({"role": "system", "content": system_instruction})
     messages.append({"role": "user", "content": prompt})
-    
+
     payload = {
         "model": "llama-3.1-70b-versatile",
         "messages": messages,
         "temperature": 0.3
     }
     try:
-        response = requests.post(url, headers=headers, json=payload, timeout=15)
+        response = requests.post(url, headers=headers, json=payload, timeout=30)
         if response.status_code == 200:
             res_json = response.json()
             return res_json["choices"][0]["message"]["content"].strip()
         else:
-            print(f"Groq API Error: {response.status_code} - {response.text}")
+            print(f"⚠️ Groq API Error: {response.status_code} - {response.text[:100]}")
             return None
     except Exception as e:
-        print(f"Groq Request Exception: {str(e)}")
+        print(f"⚠️ Groq Request Exception: {str(e)}")
         return None
 
+
 def call_grok_xai_api(prompt, key, system_instruction=None):
+    """Call xAI/Grok API with grok-beta model."""
     url = "https://api.x.ai/v1/chat/completions"
     headers = {
         "Authorization": f"Bearer {key}",
@@ -88,35 +181,90 @@ def call_grok_xai_api(prompt, key, system_instruction=None):
     if system_instruction:
         messages.append({"role": "system", "content": system_instruction})
     messages.append({"role": "user", "content": prompt})
-    
+
     payload = {
         "model": "grok-beta",
         "messages": messages,
         "temperature": 0.3
     }
     try:
-        response = requests.post(url, headers=headers, json=payload, timeout=15)
+        response = requests.post(url, headers=headers, json=payload, timeout=30)
         if response.status_code == 200:
             res_json = response.json()
             return res_json["choices"][0]["message"]["content"].strip()
         else:
-            print(f"xAI Grok API Error: {response.status_code} - {response.text}")
+            print(f"⚠️ xAI Grok API Error: {response.status_code} - {response.text[:100]}")
             return None
     except Exception as e:
-        print(f"xAI Grok Request Exception: {str(e)}")
+        print(f"⚠️ xAI Grok Request Exception: {str(e)}")
         return None
+
+
+def call_gemini_api(prompt, key, system_instruction=None):
+    """Call Google Gemini API with gemini-1.5-flash model."""
+    import google.generativeai as genai
+    
+    try:
+        genai.configure(api_key=key)
+        full_prompt = prompt
+        if system_instruction:
+            full_prompt = system_instruction + "\n\n" + prompt
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        response = model.generate_content(full_prompt)
+        if response and response.text:
+            return response.text.strip()
+        else:
+            print("⚠️ Gemini returned empty response")
+            return None
+    except Exception as e:
+        print(f"⚠️ Gemini generation error: {str(e)}")
+        return None
+
+
+def call_best_provider(prompt, system_instruction=None):
+    """
+    Auto-failover: Try Groq → xAI/Grok → Gemini → None
+    Returns (response_text, provider_name)
+    """
+    # Try Groq first
+    groq_key = get_key("GROQ_API_KEY")
+    if groq_key:
+        res = call_groq_api(prompt, groq_key, system_instruction)
+        if res:
+            return res, "groq"
+
+    # Fallback to xAI/Grok
+    xai_key = get_key("XAI_API_KEY")
+    if xai_key:
+        res = call_grok_xai_api(prompt, xai_key, system_instruction)
+        if res:
+            return res, "grok"
+
+    # Final fallback to Gemini
+    gemini_key = get_key("GEMINI_API_KEY")
+    if gemini_key:
+        res = call_gemini_api(prompt, gemini_key, system_instruction)
+        if res:
+            return res, "gemini"
+
+    return None, None
+
+
+# ══════════════════════════════════════════════════════════════
+# NARRATIVE GENERATORS
+# ══════════════════════════════════════════════════════════════
 
 def generate_ai_narrative(ticker, row_data):
     """
-    Uses dynamically routed LLM API to generate a professional, simplified 10th-grade level investment narrative.
-    Falls back to rule-based generation if API key is not present.
+    Uses auto-failover LLM API to generate a professional, simplified investment narrative.
+    Falls back to rule-based generation if no API key is available.
     """
-    from report_generator import generate_stock_narrative # local import to prevent circularity
-    
-    provider, key = get_provider_and_key()
+    from report_generator import generate_stock_narrative
+
+    provider = get_active_provider()
     if not provider:
         return generate_stock_narrative(ticker, row_data)
-        
+
     prompt = f"""
     Analyze the following stock metrics and write an investment narrative in a simple, engaging, 10th-grade reading level.
     The goal is to explain why this stock is a good momentum play and any potential risks.
@@ -146,38 +294,25 @@ def generate_ai_narrative(ticker, row_data):
     3. Explain what a 10th grader should understand about this business's current rocket speed.
     4. Tone: Confident, insightful, and easy to read.
     """
-    
-    if provider == "groq":
-        res = call_groq_api(prompt, key)
-        if res: return res
-    elif provider == "grok":
-        res = call_grok_xai_api(prompt, key)
-        if res: return res
-        
-    # Default to Gemini
-    try:
-        genai.configure(api_key=key)
-        model = genai.GenerativeModel('gemini-1.5-flash')
-        response = model.generate_content(prompt)
-        if response and response.text:
-            return response.text.strip()
-        else:
-            return generate_stock_narrative(ticker, row_data)
-    except Exception as e:
-        print(f"Gemini generation error: {str(e)}. Falling back to local template.")
-        return generate_stock_narrative(ticker, row_data)
+
+    res, provider_name = call_best_provider(prompt)
+    if res:
+        return res
+
+    return generate_stock_narrative(ticker, row_data)
+
 
 def generate_ai_narrative_v2(ticker, row_data):
     """
-    Uses dynamically routed LLM API to generate a professional, simplified 10th-grade level investment narrative for Page 2 (Value & 200 SMA).
-    Falls back to rule-based generation if API key is not present.
+    Uses auto-failover LLM API to generate investment narrative for Page 2 (Value & 200 SMA).
+    Falls back to rule-based generation if no API key is available.
     """
-    from report_generator import generate_stock_narrative_v2 # local import to prevent circularity
-    
-    provider, key = get_provider_and_key()
+    from report_generator import generate_stock_narrative_v2
+
+    provider = get_active_provider()
     if not provider:
         return generate_stock_narrative_v2(ticker, row_data)
-        
+
     prompt = f"""
     Analyze the following stock metrics and write an investment narrative in a simple, engaging, 10th-grade reading level.
     The goal is to explain why this stock is a good value/momentum entry candidate and any potential risks.
@@ -208,35 +343,23 @@ def generate_ai_narrative_v2(ticker, row_data):
     3. Explain what a 10th grader should understand about why buying close to the 200 SMA makes sense (like buying a good product on a sensible discount near its average price).
     4. Tone: Confident, insightful, and easy to read.
     """
-    
-    if provider == "groq":
-        res = call_groq_api(prompt, key)
-        if res: return res
-    elif provider == "grok":
-        res = call_grok_xai_api(prompt, key)
-        if res: return res
-        
-    # Default to Gemini
-    try:
-        genai.configure(api_key=key)
-        model = genai.GenerativeModel('gemini-1.5-flash')
-        response = model.generate_content(prompt)
-        if response and response.text:
-            return response.text.strip()
-        else:
-            return generate_stock_narrative_v2(ticker, row_data)
-    except Exception as e:
-        print(f"Gemini generation error: {str(e)}. Falling back to local template.")
-        return generate_stock_narrative_v2(ticker, row_data)
+
+    res, provider_name = call_best_provider(prompt)
+    if res:
+        return res
+
+    return generate_stock_narrative_v2(ticker, row_data)
+
 
 def discuss_with_jarvis(user_message, chat_history, active_df, page_mode="page_1"):
     """
-    Sends the user message, context of top performers, and chat history to dynamically routed LLM API.
+    Sends user message + context of top performers to auto-failover LLM API.
+    Returns a response from Groq → xAI/Grok → Gemini → Error message.
     """
-    provider, key = get_provider_and_key()
+    provider = get_active_provider()
     if not provider:
-        return "Jarvis offline. API key is missing in `api_key.txt` or `.env`."
-        
+        return "🤖 Jarvis offline. Please add API key in `jarvis_keys.txt` or set Windows System Environment Variables (JARVIS_GROQ_KEY / JARVIS_XAI_KEY / JARVIS_GEMINI_KEY)."
+
     try:
         # Prepare context of top picks and red alerts
         top_picks = []
@@ -244,11 +367,13 @@ def discuss_with_jarvis(user_message, chat_history, active_df, page_mode="page_1
             cols = ["Ticker", "Price", "Total Score", "Momentum Status", "200 SMA Dist %"]
             existing_cols = [c for c in cols if c in active_df.columns]
             top_picks = active_df.head(5)[existing_cols].to_dict(orient="records")
-            
+
         red_alerts = []
         if not active_df.empty:
-            red_alerts = active_df[active_df["Red Alert"] == True].head(5)[["Ticker", "Price", "Red Reasons"]].to_dict(orient="records")
-            
+            red_df = active_df[active_df["Red Alert"] == True]
+            if not red_df.empty:
+                red_alerts = red_df.head(5)[["Ticker", "Price", "Red Reasons"]].to_dict(orient="records")
+
         system_instructions = (
             "You are Jarvis, the advanced neural investment advisor for Bharat AI Fund Manager Gill. "
             "You are talking directly to Gurjas (Dr. Saab), the lead investor and systems CTO. "
@@ -256,7 +381,7 @@ def discuss_with_jarvis(user_message, chat_history, active_df, page_mode="page_1
             "Keep your answers concise, structured, and highly insightful. Make suggestions based on the stock scoring. "
             "Refer to yourself as Jarvis. Do not give generic advice, be bold and give concrete analysis based on our data. "
         )
-        
+
         if page_mode == "page_2":
             system_instructions += (
                 "We are currently examining 'Page 2: Value & 200 SMA Screener'. "
@@ -271,33 +396,29 @@ def discuss_with_jarvis(user_message, chat_history, active_df, page_mode="page_1
                 "The stocks listed are scored out of 20 points based on breakout ATH/3Y High status (5 pts), sales ATH (5 pts), "
                 "profit ATH (5 pts), latest quarter performance (2 pts), and PE < EPS Value Fit (3 pts). "
             )
-            
+
         system_instructions += f"\n\nActive Market Context:\nTop 5 Scored Picks: {top_picks}\nActive Blacklisted Stocks (Red Alerts): {red_alerts}\n"
-        
-        # Format conversation history for prompt
+
+        # Format conversation history
         conversation_prompt = "Conversation History:\n"
-        for role, msg in chat_history[-6:]: # Keep last 6 messages
+        for role, msg in chat_history[-6:]:
             conversation_prompt += f"{role}: {msg}\n"
-            
+
         conversation_prompt += f"User (Gurjas): {user_message}\nJarvis:"
-        
-        if provider == "groq":
-            res = call_groq_api(conversation_prompt, key, system_instruction=system_instructions)
-            if res: return res
-            return "Jarvis (Groq) is compiling data... Please repeat that."
-        elif provider == "grok":
-            res = call_grok_xai_api(conversation_prompt, key, system_instruction=system_instructions)
-            if res: return res
-            return "Jarvis (Grok) is compiling data... Please repeat that."
-            
-        # Default to Gemini
-        genai.configure(api_key=key)
-        model = genai.GenerativeModel('gemini-1.5-flash')
-        full_prompt = system_instructions + "\n" + conversation_prompt
-        response = model.generate_content(full_prompt)
-        if response and response.text:
-            return response.text.strip()
-        return "Jarvis (Gemini) is compiling data... Please repeat that."
-        
+
+        # Auto-failover: try all providers
+        res, used_provider = call_best_provider(conversation_prompt, system_instruction=system_instructions)
+        if res:
+            return res
+
+        return (
+            "🤖 Jarvis tried all available AI engines (Groq, xAI/Grok, Gemini) but none could respond. "
+            "Possible issues:\n"
+            "  1. API keys may be expired or out of credits\n"
+            "  2. Check `jarvis_keys.txt` or System Environment Variables\n"
+            "  3. Internet connection may be unstable\n\n"
+            "💡 TIP: Get a free Groq key at https://console.groq.com/keys — it's the fastest!"
+        )
+
     except Exception as e:
-        return f"Jarvis Connection Error: {str(e)}. Please check your API key validity."
+        return f"🤖 Jarvis Connection Error: {str(e)}. Try again or check API keys."

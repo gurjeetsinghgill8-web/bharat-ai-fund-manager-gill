@@ -21,6 +21,10 @@ echo  [INFO]: Press Ctrl+C in this window to stop the dashboard.
 echo ==========================================================
 echo.
 
+:: Clear Python cache to pick up new llm_harness.py changes
+if exist __pycache__ rmdir /s /q __pycache__
+if exist "C:\Users\%USERNAME%\AppData\Local\Streamlit\cache" rmdir /s /q "C:\Users\%USERNAME%\AppData\Local\Streamlit\cache" 2>nul
+
 python -m streamlit run app.py
 
 pause

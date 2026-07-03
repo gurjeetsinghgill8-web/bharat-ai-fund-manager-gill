@@ -263,9 +263,241 @@ last_up = st.session_state["last_update"] or "Never"
 st.sidebar.caption(f"Last data sync: {last_up}")
 st.sidebar.caption(f"Universe: {len(all_tickers)} stocks")
 
+
+# ============================================================
+# PORTFOLIO RENDERING ENGINE (reusable — used by tabs & dedicated page)
+# ============================================================
+def render_portfolio_page(suffix="port"):
+    """
+    Render the full Excel-style portfolio dashboard.
+    suffix param ensures unique Streamlit widget keys when called multiple times.
+    """
+    # Refresh portfolio prices on every page load (once per session)
+    if not st.session_state["portfolio_refreshed"] and st.session_state["portfolio"]:
+        with st.spinner("Refreshing portfolio prices..."):
+            st.session_state["portfolio"] = update_portfolio_prices(st.session_state["portfolio"])
+            st.session_state["portfolio_refreshed"] = True
+            # Trigger all alert systems for stocks below 200 SMA
+            triggered = check_and_trigger_alerts(st.session_state["portfolio"])
+            st.session_state["alert_stocks_triggered"] = [h["symbol"] for h in triggered]
+        st.rerun()
+    
+    portfolio = st.session_state["portfolio"]
+    
+    # ---- Add Stock Form ----
+    with st.expander("➕ Add Stock to Portfolio", expanded=not bool(portfolio)):
+        col_a1, col_a2, col_a3, col_a4 = st.columns([3, 2, 2, 1])
+        all_syms = sorted(st.session_state["stock_cache"].keys())
+        with col_a1:
+            new_sym = st.selectbox("Symbol", all_syms, key=f"{suffix}_port_add_sym")
+        with col_a2:
+            new_buy = st.number_input("Buy Price (₹)", min_value=0.01, step=1.0, key=f"{suffix}_port_add_buy")
+        with col_a3:
+            new_qty = st.number_input("Quantity", min_value=1, step=1, key=f"{suffix}_port_add_qty")
+        with col_a4:
+            st.markdown("<br/>", unsafe_allow_html=True)
+            if st.button("Add", key=f"{suffix}_port_add_btn"):
+                st.session_state["portfolio"] = add_holding(new_sym, new_buy, int(new_qty))
+                st.success(f"✅ Added {new_sym.replace('.NS', '')} to portfolio!")
+                st.session_state["portfolio"] = update_portfolio_prices(st.session_state["portfolio"])
+                st.rerun()
+    
+    st.markdown("---")
+    
+    # ---- Control Buttons Row ----
+    col_r1, col_r2, col_r3, col_r4 = st.columns([3, 2, 2, 3])
+    with col_r2:
+        if st.button("🔄 Refresh Prices Now", use_container_width=True, key=f"{suffix}_port_refresh"):
+            with st.spinner("Fetching latest prices..."):
+                st.session_state["portfolio"] = update_portfolio_prices(st.session_state["portfolio"])
+                triggered = check_and_trigger_alerts(st.session_state["portfolio"])
+                st.session_state["alert_stocks_triggered"] = [h["symbol"] for h in triggered]
+            st.rerun()
+    with col_r3:
+        if st.button("🔊 Test Alert Sound", use_container_width=True, key=f"{suffix}_port_test_sound"):
+            play_alert_sound(repeat=2)
+            show_desktop_notification("🔊 Alert Test", "Bharat AI alert system is active and working!")
+            st.success("✅ Sound + Desktop notification test sent!")
+    with col_r4:
+        if portfolio and st.button("📥 Download Portfolio Excel", use_container_width=True, key=f"{suffix}_port_dl"):
+            excel_path = "portfolio_report.xlsx"
+            ok = export_portfolio_to_excel(portfolio, excel_path)
+            if ok:
+                with open(excel_path, "rb") as f:
+                    st.download_button(
+                        "📥 Click to Download",
+                        f,
+                        file_name="my_portfolio_report.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        key=f"{suffix}_port_dl_btn"
+                    )
+            else:
+                st.error("Failed to generate Excel report.")
+    
+    if not portfolio:
+        st.info("💡 Your portfolio is empty. Add stocks above to start tracking them against the 200 SMA.")
+    else:
+        # ---- Check for stocks BELOW 200 SMA → SUPER LOUD ALERTS (ALL 4 TYPES) ----
+        below_sma_stocks = [h for h in portfolio if h["sma_200"] > 0 and not h["above_sma"]]
+        if below_sma_stocks:
+            new_triggers = [h["symbol"] for h in below_sma_stocks if h["symbol"] not in st.session_state.get("alert_stocks_triggered", [])]
+            if new_triggers:
+                triggered = check_and_trigger_alerts(below_sma_stocks)
+                st.session_state["alert_stocks_triggered"] = list(set(
+                    st.session_state.get("alert_stocks_triggered", []) + [h["symbol"] for h in triggered]
+                ))
+            
+            for h in below_sma_stocks:
+                sym_display = h["symbol"].replace(".NS", "")
+                for _ in range(3):
+                    st.markdown(f"""
+                    <div class="portfolio-alert-box">
+                        🚨🚨 CRITICAL ALERT: {sym_display} is BELOW 200 SMA! EXIT IMMEDIATELY! 🚨🚨<br/>
+                        LTP: ₹{h['ltp']} | 200 SMA: ₹{h['sma_200']} | Distance: {h['dist_pct']}%<br/>
+                        <small>You bought at ₹{h['buy_price']} × {h['quantity']} shares</small>
+                    </div>
+                    """, unsafe_allow_html=True)
+        
+        # ---- Excel-Style Portfolio Table ----
+        st.markdown("#### 📋 Your Holdings — Excel Dashboard View")
+        
+        # Compute summary numbers for header row
+        total_invested = sum(h["buy_price"] * h["quantity"] for h in portfolio)
+        total_value = sum((h["ltp"] * h["quantity"]) if h["ltp"] > 0 else 0 for h in portfolio)
+        overall_pl = round(((total_value - total_invested) / total_invested) * 100, 2) if total_invested > 0 else 0
+        buy_count = sum(1 for h in portfolio if h.get("signal") == "BUY")
+        hold_count = sum(1 for h in portfolio if h.get("signal") == "HOLD")
+        exit_count = sum(1 for h in portfolio if h.get("signal") == "EXIT")
+        above_sma_count = sum(1 for h in portfolio if h["sma_200"] > 0 and h["above_sma"])
+        below_sma_count = sum(1 for h in portfolio if h["sma_200"] > 0 and not h["above_sma"])
+        
+        # Summary metric cards
+        mcol1, mcol2, mcol3, mcol4, mcol5 = st.columns(5)
+        mcol1.metric("💰 Total Invested", f"₹{total_invested:,.2f}")
+        mcol2.metric("📊 Current Value", f"₹{total_value:,.2f}")
+        pl_mcolor = "#00CC00" if overall_pl >= 0 else "#FF0000"
+        mcol3.markdown(f'<div style="text-align:center"><span style="font-size:1.1rem; font-weight:bold;">Overall P&L</span><br/><span style="font-size:1.8rem; font-weight:bold; color:{pl_mcolor};">{overall_pl}%</span></div>', unsafe_allow_html=True)
+        mcol4.metric("✅ Above SMA / ⚠️ Below", f"{above_sma_count} / {below_sma_count}")
+        mcol5.metric("🟢 BUY / HOLD / 🚨 EXIT", f"{buy_count}/{hold_count}/{exit_count}")
+        
+        st.markdown("<br/>", unsafe_allow_html=True)
+        
+        table_data = []
+        for h in portfolio:
+            sym = h["symbol"]
+            buy = h["buy_price"]
+            qty = h["quantity"]
+            invested = round(buy * qty, 2)
+            ltp = h["ltp"]
+            curr_val = round(ltp * qty, 2) if ltp > 0 else 0
+            pl_pct = round(((ltp - buy) / buy) * 100, 2) if ltp > 0 and buy > 0 else 0
+            sma = h["sma_200"]
+            dist = h["dist_pct"]
+            above = h["above_sma"] if sma > 0 else True
+            signal = h.get("signal", "WAIT")
+            
+            if sma > 0 and not above:
+                status_html = '<span class="portfolio-status-badge portfolio-status-red">🔴 BELOW 200 SMA — EXIT NOW!</span>'
+            elif sma > 0:
+                status_html = '<span class="portfolio-status-badge portfolio-status-green">✅ Above 200 SMA</span>'
+            else:
+                status_html = '<span class="portfolio-status-badge portfolio-status-green">⏳ No SMA Data</span>'
+            
+            if signal == "EXIT":
+                signal_html = '<span style="color:#FF0000; font-weight:bold; font-size:1.1rem;">🚨 EXIT</span>'
+            elif signal == "BUY":
+                signal_html = '<span style="color:#006600; font-weight:bold;">✅ BUY</span>'
+            elif signal == "HOLD":
+                signal_html = '<span style="color:#CC8800; font-weight:bold;">✅ HOLD</span>'
+            else:
+                signal_html = '<span style="color:#888;">⏳ WAIT</span>'
+            
+            dist_str = f"{dist}%" if sma > 0 else "N/A"
+            dist_color = "#00CC00" if dist >= 0 else "#FF0000"
+            dist_html = f'<span style="color:{dist_color}; font-weight:bold;">{dist_str}</span>'
+            
+            pl_color = "#00CC00" if pl_pct >= 0 else "#FF0000"
+            pl_icon = "📈" if pl_pct >= 0 else "📉"
+            pl_html = f'{pl_icon} <span style="color:{pl_color}; font-weight:bold;">{pl_pct}%</span>' if ltp > 0 else "—"
+            
+            table_data.append({
+                "Symbol": sym.replace(".NS", ""),
+                "Buy Price": f"₹{buy}",
+                "Qty": qty,
+                "Invested": f"₹{invested}",
+                "LTP": f"₹{ltp}" if ltp > 0 else "—",
+                "Value": f"₹{curr_val}" if curr_val > 0 else "—",
+                "P&L %": pl_html,
+                "200 SMA": f"₹{sma}" if sma > 0 else "—",
+                "SMA Dist %": dist_html,
+                "Signal": signal_html,
+                "Status": status_html,
+                "_above": above,
+                "_sma": sma
+            })
+        
+        # Render as Excel-style HTML table
+        rows_html = ""
+        for row in table_data:
+            row_class = "portfolio-row-red" if (row["_sma"] > 0 and not row["_above"]) else "portfolio-row-green"
+            rows_html += f"""
+            <tr class="{row_class}">
+                <td><strong>{row['Symbol']}</strong></td>
+                <td>{row['Buy Price']}</td>
+                <td>{row['Qty']}</td>
+                <td>{row['Invested']}</td>
+                <td>{row['LTP']}</td>
+                <td>{row['Value']}</td>
+                <td>{row['P&L %']}</td>
+                <td>{row['200 SMA']}</td>
+                <td>{row['SMA Dist %']}</td>
+                <td>{row['Signal']}</td>
+                <td>{row['Status']}</td>
+            </tr>
+            """
+        
+        st.markdown(f"""
+        <style>
+            .portfolio-table {{ width: 100%; border-collapse: collapse; font-size: 0.9rem; font-family: 'Consolas', 'Courier New', monospace; }}
+            .portfolio-table th {{ background: #0B192C; color: white; padding: 12px 8px; text-align: left; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.5px; }}
+            .portfolio-table td {{ padding: 10px 8px; border-bottom: 1px solid #E0E0E0; }}
+            .portfolio-table tr:hover {{ background: rgba(14, 165, 233, 0.08) !important; }}
+        </style>
+        <table class="portfolio-table">
+            <thead>
+                <tr>
+                    <th>Symbol</th><th>Buy Price</th><th>Qty</th><th>Invested</th>
+                    <th>LTP</th><th>Value</th><th>P&L %</th><th>200 SMA</th><th>SMA Dist %</th><th>Signal</th><th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                {rows_html}
+            </tbody>
+        </table>
+        <div style="text-align:right; font-size:0.75rem; color:#888; margin-top:5px;">
+            Auto-refreshes every 15 min • Last update: {portfolio[0]["last_updated"] if portfolio and portfolio[0]["last_updated"] else "—"}
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # ---- Remove Stock ----
+        st.markdown("---")
+        col_rem1, col_rem2, col_rem3 = st.columns([2, 2, 6])
+        with col_rem1:
+            if portfolio:
+                rem_sym = st.selectbox("🗑️ Remove a Holding", [h["symbol"] for h in portfolio], key=f"{suffix}_port_rem_sym")
+        with col_rem2:
+            st.markdown("<br/>", unsafe_allow_html=True)
+            if portfolio and st.button("🗑️ Remove", use_container_width=True, key=f"{suffix}_port_rem_btn"):
+                st.session_state["portfolio"] = remove_holding(rem_sym)
+                st.session_state["alert_stocks_triggered"] = [h["symbol"] for h in st.session_state["portfolio"]
+                                                               if h.get("sma_200", 0) > 0 and not h.get("above_sma", False)]
+                st.warning(f"Removed {rem_sym.replace('.NS', '')} from portfolio.")
+                st.rerun()
+
+
 # Filter selections
 st.sidebar.markdown("---")
-engine_page = st.sidebar.radio("Navigation", ["⚡ Page 1: Momentum & Breakout", "🔍 Page 2: Value & 200 SMA"])
+engine_page = st.sidebar.radio("Navigation", ["⚡ Page 1: Momentum & Breakout", "🔍 Page 2: Value & 200 SMA", "📊 Portfolio Dashboard"])
 
 use_full = "2000+" in scan_mode
 st.sidebar.markdown("---")
@@ -275,8 +507,10 @@ selected_cap = st.sidebar.selectbox("Market Cap Universe", get_all_categories(us
 
 if engine_page == "⚡ Page 1: Momentum & Breakout":
     min_score = st.sidebar.slider("Minimum Quality Score", 0, 20, 10)
-else:
+elif engine_page == "🔍 Page 2: Value & 200 SMA":
     min_score = st.sidebar.slider("Minimum Quality Score", 0, 16, 8)
+else:
+    min_score = 0  # Not used for portfolio page
 
 # Process active dataset
 df, latest_highs, continuous, red_alerts = pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
@@ -292,9 +526,12 @@ if st.session_state["stock_cache"]:
 
     if engine_page == "⚡ Page 1: Momentum & Breakout":
         df, latest_highs, continuous, red_alerts = run_scoring(st.session_state["stock_cache"])
-    else:
+    elif engine_page == "🔍 Page 2: Value & 200 SMA":
         df, continuous, red_alerts = run_scoring_v2(st.session_state["stock_cache"])
         latest_highs = pd.DataFrame()
+    else:
+        # Portfolio Dashboard — no scoring needed
+        pass
 
     # Apply sidebar filters
     if selected_cap != "All Stocks":
@@ -307,13 +544,22 @@ if st.session_state["stock_cache"]:
     df = df[df["Total Score"] >= min_score] if not df.empty else df
 
 # ------------------ MAIN SCREEN ------------------
-st.title("⚡ BHARAT AI FUND MANAGER GILL" if engine_page == "⚡ Page 1: Momentum & Breakout" else "🛡️ BHARAT AI VALUE & 200 SMA SCREENER")
-st.markdown("### Jarvis Autonomous Option/Equity Momentum Screener (v1.01 Upgrade)" if engine_page == "⚡ Page 1: Momentum & Breakout" else "### Jarvis Proximity & CAGR Value Engine")
-
-if not st.session_state["stock_cache"]:
+if engine_page == "📊 Portfolio Dashboard":
+    st.title("📊 BHARAT AI PORTFOLIO MANAGER")
+    st.markdown("### Personal Portfolio Tracker — Excel-Style Dashboard with Auto Signals & Alerts")
+    st.write("Track your own holdings against the 200-day SMA with **auto signals, live alerts, and sound notifications**. Dashboard auto-refreshes every 15 minutes.")
+    st.caption("💡 Tip: If a stock falls below the 200 SMA, you'll get **🔊 sound beeps + 📢 desktop notifications + 📧 email alert + 🔴 pulsing red banner** — all automated.")
+    st.markdown("---")
+    render_portfolio_page(suffix="dedicated")
+    
+elif not st.session_state["stock_cache"]:
     st.warning("No stock data cached. Please run a 'System Scan' in the left control panel to fetch fresh market parameters.")
 else:
     if engine_page == "⚡ Page 1: Momentum & Breakout":
+        # Title and header
+        st.title("⚡ BHARAT AI FUND MANAGER GILL")
+        st.markdown("### Jarvis Autonomous Option/Equity Momentum Screener (v1.01 Upgrade)")
+        
         # 1. Metric Display Cards (Page 1)
         star_stocks = len(df[df["Star Rating"] == 3]) if not df.empty else 0
         col1, col2, col3, col4, col5 = st.columns(5)
@@ -591,240 +837,7 @@ else:
 
         # --- TAB 7: My Portfolio ---
         with tab7:
-            st.subheader("📊 My Personal Portfolio Tracker — Excel-Style Dashboard")
-            st.write("Track your own holdings against the 200-day SMA with **auto signals, live alerts, and sound notifications**. Dashboard auto-refreshes every 15 minutes.")
-            st.caption("💡 Tip: If a stock falls below the 200 SMA, you'll get **🔊 sound beeps + 📢 desktop notifications + 📧 email alert + 🔴 pulsing red banner** — all automated.")
-            
-            # Refresh portfolio prices on every page load (once per session)
-            if not st.session_state["portfolio_refreshed"] and st.session_state["portfolio"]:
-                with st.spinner("Refreshing portfolio prices..."):
-                    st.session_state["portfolio"] = update_portfolio_prices(st.session_state["portfolio"])
-                    st.session_state["portfolio_refreshed"] = True
-                    
-                    # Trigger all alert systems for stocks below 200 SMA
-                    triggered = check_and_trigger_alerts(st.session_state["portfolio"])
-                    st.session_state["alert_stocks_triggered"] = [h["symbol"] for h in triggered]
-                st.rerun()
-            
-            portfolio = st.session_state["portfolio"]
-            
-            # ---- Add Stock Form ----
-            with st.expander("➕ Add Stock to Portfolio", expanded=not bool(portfolio)):
-                col_a1, col_a2, col_a3, col_a4 = st.columns([3, 2, 2, 1])
-                all_syms = sorted(st.session_state["stock_cache"].keys())
-                with col_a1:
-                    new_sym = st.selectbox("Symbol", all_syms, key="p1_port_add_sym")
-                with col_a2:
-                    new_buy = st.number_input("Buy Price (₹)", min_value=0.01, step=1.0, key="p1_port_add_buy")
-                with col_a3:
-                    new_qty = st.number_input("Quantity", min_value=1, step=1, key="p1_port_add_qty")
-                with col_a4:
-                    st.markdown("<br/>", unsafe_allow_html=True)
-                    if st.button("Add", key="p1_port_add_btn"):
-                        st.session_state["portfolio"] = add_holding(new_sym, new_buy, int(new_qty))
-                        st.success(f"✅ Added {new_sym.replace('.NS', '')} to portfolio!")
-                        # Refresh prices for the new holding
-                        st.session_state["portfolio"] = update_portfolio_prices(st.session_state["portfolio"])
-                        st.rerun()
-            
-            st.markdown("---")
-            
-            # ---- Control Buttons Row ----
-            col_r1, col_r2, col_r3, col_r4 = st.columns([3, 2, 2, 3])
-            with col_r2:
-                if st.button("🔄 Refresh Prices Now", use_container_width=True, key="p1_port_refresh"):
-                    with st.spinner("Fetching latest prices..."):
-                        st.session_state["portfolio"] = update_portfolio_prices(st.session_state["portfolio"])
-                        # Trigger alerts
-                        triggered = check_and_trigger_alerts(st.session_state["portfolio"])
-                        st.session_state["alert_stocks_triggered"] = [h["symbol"] for h in triggered]
-                    st.rerun()
-            with col_r3:
-                if st.button("🔊 Test Alert Sound", use_container_width=True, key="p1_port_test_sound"):
-                    play_alert_sound(repeat=2)
-                    show_desktop_notification("🔊 Alert Test", "Bharat AI alert system is active and working!")
-                    st.success("✅ Sound + Desktop notification test sent!")
-            with col_r4:
-                if portfolio and st.button("📥 Download Portfolio Excel", use_container_width=True, key="p1_port_dl"):
-                    excel_path = "portfolio_report.xlsx"
-                    ok = export_portfolio_to_excel(portfolio, excel_path)
-                    if ok:
-                        with open(excel_path, "rb") as f:
-                            st.download_button(
-                                "📥 Click to Download",
-                                f,
-                                file_name="my_portfolio_report.xlsx",
-                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                key="p1_port_dl_btn"
-                            )
-                    else:
-                        st.error("Failed to generate Excel report.")
-            
-            if not portfolio:
-                st.info("💡 Your portfolio is empty. Add stocks above to start tracking them against the 200 SMA.")
-            else:
-                # ---- Check for stocks BELOW 200 SMA → SUPER LOUD ALERTS (ALL 4 TYPES) ----
-                below_sma_stocks = [h for h in portfolio if h["sma_200"] > 0 and not h["above_sma"]]
-                if below_sma_stocks:
-                    # Trigger alerts if not already done this session
-                    new_triggers = [h["symbol"] for h in below_sma_stocks if h["symbol"] not in st.session_state.get("alert_stocks_triggered", [])]
-                    if new_triggers:
-                        triggered = check_and_trigger_alerts(below_sma_stocks)
-                        st.session_state["alert_stocks_triggered"] = list(set(
-                            st.session_state.get("alert_stocks_triggered", []) + [h["symbol"] for h in triggered]
-                        ))
-                    
-                    for h in below_sma_stocks:
-                        sym_display = h["symbol"].replace(".NS", "")
-                        for _ in range(3):  # Repeat alert 3 times for urgency
-                            st.markdown(f"""
-                            <div class="portfolio-alert-box">
-                                🚨🚨 CRITICAL ALERT: {sym_display} is BELOW 200 SMA! EXIT IMMEDIATELY! 🚨🚨<br/>
-                                LTP: ₹{h['ltp']} | 200 SMA: ₹{h['sma_200']} | Distance: {h['dist_pct']}%<br/>
-                                <small>You bought at ₹{h['buy_price']} × {h['quantity']} shares</small>
-                            </div>
-                            """, unsafe_allow_html=True)
-                
-                # ---- Excel-Style Portfolio Table ----
-                st.markdown("#### 📋 Your Holdings — Excel Dashboard View")
-                
-                table_data = []
-                for h in portfolio:
-                    sym = h["symbol"]
-                    buy = h["buy_price"]
-                    qty = h["quantity"]
-                    invested = round(buy * qty, 2)
-                    ltp = h["ltp"]
-                    curr_val = round(ltp * qty, 2) if ltp > 0 else 0
-                    pl_pct = round(((ltp - buy) / buy) * 100, 2) if ltp > 0 and buy > 0 else 0
-                    sma = h["sma_200"]
-                    dist = h["dist_pct"]
-                    above = h["above_sma"] if sma > 0 else True
-                    signal = h.get("signal", "WAIT")
-                    
-                    if sma > 0 and not above:
-                        status_html = '<span class="portfolio-status-badge portfolio-status-red">🔴 BELOW 200 SMA — EXIT NOW!</span>'
-                    elif sma > 0:
-                        status_html = '<span class="portfolio-status-badge portfolio-status-green">✅ Above 200 SMA</span>'
-                    else:
-                        status_html = '<span class="portfolio-status-badge portfolio-status-green">⏳ No SMA Data</span>'
-                    
-                    # Signal display
-                    if signal == "EXIT":
-                        signal_html = '<span style="color:#FF0000; font-weight:bold; font-size:1.1rem;">🚨 EXIT</span>'
-                    elif signal == "BUY":
-                        signal_html = '<span style="color:#006600; font-weight:bold;">✅ BUY</span>'
-                    elif signal == "HOLD":
-                        signal_html = '<span style="color:#CC8800; font-weight:bold;">✅ HOLD</span>'
-                    else:
-                        signal_html = '<span style="color:#888;">⏳ WAIT</span>'
-                    
-                    dist_str = f"{dist}%" if sma > 0 else "N/A"
-                    dist_color = "#00CC00" if dist >= 0 else "#FF0000"
-                    dist_html = f'<span style="color:{dist_color}; font-weight:bold;">{dist_str}</span>'
-                    
-                    pl_color = "#00CC00" if pl_pct >= 0 else "#FF0000"
-                    pl_icon = "📈" if pl_pct >= 0 else "📉"
-                    pl_html = f'{pl_icon} <span style="color:{pl_color}; font-weight:bold;">{pl_pct}%</span>' if ltp > 0 else "—"
-                    
-                    table_data.append({
-                        "Symbol": sym.replace(".NS", ""),
-                        "Buy Price": f"₹{buy}",
-                        "Qty": qty,
-                        "Invested": f"₹{invested}",
-                        "LTP": f"₹{ltp}" if ltp > 0 else "—",
-                        "Value": f"₹{curr_val}" if curr_val > 0 else "—",
-                        "P&L %": pl_html,
-                        "200 SMA": f"₹{sma}" if sma > 0 else "—",
-                        "SMA Dist %": dist_html,
-                        "Signal": signal_html,
-                        "Status": status_html,
-                        "_above": above,
-                        "_sma": sma
-                    })
-                
-                # Render as Excel-style HTML table
-                rows_html = ""
-                row_idx = 0
-                for row in table_data:
-                    row_class = "portfolio-row-red" if (row["_sma"] > 0 and not row["_above"]) else "portfolio-row-green"
-                    rows_html += f"""
-                    <tr class="{row_class}">
-                        <td><strong>{row['Symbol']}</strong></td>
-                        <td>{row['Buy Price']}</td>
-                        <td>{row['Qty']}</td>
-                        <td>{row['Invested']}</td>
-                        <td>{row['LTP']}</td>
-                        <td>{row['Value']}</td>
-                        <td>{row['P&L %']}</td>
-                        <td>{row['200 SMA']}</td>
-                        <td>{row['SMA Dist %']}</td>
-                        <td>{row['Signal']}</td>
-                        <td>{row['Status']}</td>
-                    </tr>
-                    """
-                    row_idx += 1
-                
-                st.markdown(f"""
-                <style>
-                    .portfolio-table {{ width: 100%; border-collapse: collapse; font-size: 0.9rem; font-family: 'Consolas', 'Courier New', monospace; }}
-                    .portfolio-table th {{ background: #0B192C; color: white; padding: 12px 8px; text-align: left; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.5px; }}
-                    .portfolio-table td {{ padding: 10px 8px; border-bottom: 1px solid #E0E0E0; }}
-                    .portfolio-table tr:hover {{ background: rgba(14, 165, 233, 0.08) !important; }}
-                </style>
-                <table class="portfolio-table">
-                    <thead>
-                        <tr>
-                            <th>Symbol</th><th>Buy Price</th><th>Qty</th><th>Invested</th>
-                            <th>LTP</th><th>Value</th><th>P&L %</th><th>200 SMA</th><th>SMA Dist %</th><th>Signal</th><th>Status</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {rows_html}
-                    </tbody>
-                </table>
-                <div style="text-align:right; font-size:0.75rem; color:#888; margin-top:5px;">
-                    Auto-refreshes every 15 min • Last update: {portfolio[0]["last_updated"] if portfolio and portfolio[0]["last_updated"] else "—"}
-                </div>
-                """, unsafe_allow_html=True)
-                
-                # ---- Remove Stock ----
-                st.markdown("---")
-                col_rem1, col_rem2, col_rem3 = st.columns([2, 2, 6])
-                with col_rem1:
-                    if portfolio:
-                        rem_sym = st.selectbox(
-                            "🗑️ Remove a Holding",
-                            [h["symbol"] for h in portfolio],
-                            key="p1_port_rem_sym"
-                        )
-                with col_rem2:
-                    st.markdown("<br/>", unsafe_allow_html=True)
-                    if portfolio and st.button("🗑️ Remove", use_container_width=True, key="p1_port_rem_btn"):
-                        st.session_state["portfolio"] = remove_holding(rem_sym)
-                        st.session_state["alert_stocks_triggered"] = [h["symbol"] for h in st.session_state["portfolio"] 
-                                                                       if h.get("sma_200", 0) > 0 and not h.get("above_sma", False)]
-                        st.warning(f"Removed {rem_sym.replace('.NS', '')} from portfolio.")
-                        st.rerun()
-                
-                # ---- Summary Stats ----
-                st.markdown("---")
-                total_invested = sum(h["buy_price"] * h["quantity"] for h in portfolio)
-                total_value = sum((h["ltp"] * h["quantity"]) if h["ltp"] > 0 else 0 for h in portfolio)
-                overall_pl = round(((total_value - total_invested) / total_invested) * 100, 2) if total_invested > 0 else 0
-                
-                # Count signals
-                buy_count = sum(1 for h in portfolio if h.get("signal") == "BUY")
-                hold_count = sum(1 for h in portfolio if h.get("signal") == "HOLD")
-                exit_count = sum(1 for h in portfolio if h.get("signal") == "EXIT")
-                
-                cols_s = st.columns(5)
-                cols_s[0].metric("💰 Total Invested", f"₹{total_invested:,.2f}")
-                cols_s[1].metric("📊 Current Value", f"₹{total_value:,.2f}")
-                pl_color_s = "#00CC00" if overall_pl >= 0 else "#FF0000"
-                cols_s[2].markdown(f'<div style="text-align:center"><span style="font-size:1.2rem; font-weight:bold;">Overall P&L</span><br/><span style="font-size:2rem; font-weight:bold; color:{pl_color_s};">{overall_pl}%</span></div>', unsafe_allow_html=True)
-                cols_s[3].metric("🟢 BUY / HOLD", f"{buy_count} / {hold_count}")
-                cols_s[4].metric("🚨 EXIT Signals", f"{exit_count}", delta_color="off")
+            render_portfolio_page(suffix="p1")
 
         # --- TAB 8: Newsletter Dispatcher ---
         with tab8:
@@ -869,7 +882,10 @@ else:
                         st.error("Report generation failed. Check server logs.")
 
     else:
-        # Page 2 rendering logic
+        # Page 2 — Title and header
+        st.title("🛡️ BHARAT AI VALUE & 200 SMA SCREENER")
+        st.markdown("### Jarvis Proximity & CAGR Value Engine")
+        
         # 1. Metric Display Cards
         star_stocks = len(df[df["Star Rating"] == 3]) if not df.empty else 0
         col1, col2, col3, col4, col5 = st.columns(5)
@@ -1155,237 +1171,7 @@ else:
 
         # --- TAB 6: My Portfolio (Page 2) ---
         with tab6:
-            st.subheader("📊 My Personal Portfolio Tracker — Excel-Style Dashboard")
-            st.write("Track your own holdings against the 200-day SMA with **auto signals, live alerts, and sound notifications**. Dashboard auto-refreshes every 15 minutes.")
-            st.caption("💡 Tip: If a stock falls below the 200 SMA, you'll get **🔊 sound beeps + 📢 desktop notifications + 📧 email alert + 🔴 pulsing red banner** — all automated.")
-            
-            # Refresh portfolio prices on every page load (once per session)
-            if not st.session_state["portfolio_refreshed"] and st.session_state["portfolio"]:
-                with st.spinner("Refreshing portfolio prices..."):
-                    st.session_state["portfolio"] = update_portfolio_prices(st.session_state["portfolio"])
-                    st.session_state["portfolio_refreshed"] = True
-                    
-                    # Trigger all alert systems for stocks below 200 SMA
-                    triggered = check_and_trigger_alerts(st.session_state["portfolio"])
-                    st.session_state["alert_stocks_triggered"] = [h["symbol"] for h in triggered]
-                st.rerun()
-            
-            portfolio = st.session_state["portfolio"]
-            
-            # ---- Add Stock Form ----
-            with st.expander("➕ Add Stock to Portfolio", expanded=not bool(portfolio)):
-                col_a1, col_a2, col_a3, col_a4 = st.columns([3, 2, 2, 1])
-                all_syms = sorted(st.session_state["stock_cache"].keys())
-                with col_a1:
-                    new_sym = st.selectbox("Symbol", all_syms, key="p2_port_add_sym")
-                with col_a2:
-                    new_buy = st.number_input("Buy Price (₹)", min_value=0.01, step=1.0, key="p2_port_add_buy")
-                with col_a3:
-                    new_qty = st.number_input("Quantity", min_value=1, step=1, key="p2_port_add_qty")
-                with col_a4:
-                    st.markdown("<br/>", unsafe_allow_html=True)
-                    if st.button("Add", key="p2_port_add_btn"):
-                        st.session_state["portfolio"] = add_holding(new_sym, new_buy, int(new_qty))
-                        st.success(f"✅ Added {new_sym.replace('.NS', '')} to portfolio!")
-                        st.session_state["portfolio"] = update_portfolio_prices(st.session_state["portfolio"])
-                        st.rerun()
-            
-            st.markdown("---")
-            
-            # ---- Control Buttons Row ----
-            col_r1, col_r2, col_r3, col_r4 = st.columns([3, 2, 2, 3])
-            with col_r2:
-                if st.button("🔄 Refresh Prices Now", use_container_width=True, key="p2_port_refresh"):
-                    with st.spinner("Fetching latest prices..."):
-                        st.session_state["portfolio"] = update_portfolio_prices(st.session_state["portfolio"])
-                        # Trigger alerts
-                        triggered = check_and_trigger_alerts(st.session_state["portfolio"])
-                        st.session_state["alert_stocks_triggered"] = [h["symbol"] for h in triggered]
-                    st.rerun()
-            with col_r3:
-                if st.button("🔊 Test Alert Sound", use_container_width=True, key="p2_port_test_sound"):
-                    play_alert_sound(repeat=2)
-                    show_desktop_notification("🔊 Alert Test", "Bharat AI alert system is active and working!")
-                    st.success("✅ Sound + Desktop notification test sent!")
-            with col_r4:
-                if portfolio and st.button("📥 Download Portfolio Excel", use_container_width=True, key="p2_port_dl"):
-                    excel_path = "portfolio_report.xlsx"
-                    ok = export_portfolio_to_excel(portfolio, excel_path)
-                    if ok:
-                        with open(excel_path, "rb") as f:
-                            st.download_button(
-                                "📥 Click to Download",
-                                f,
-                                file_name="my_portfolio_report.xlsx",
-                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                key="p2_port_dl_btn"
-                            )
-                    else:
-                        st.error("Failed to generate Excel report.")
-            
-            if not portfolio:
-                st.info("💡 Your portfolio is empty. Add stocks above to start tracking them against the 200 SMA.")
-            else:
-                # ---- Check for stocks BELOW 200 SMA → SUPER LOUD ALERTS (ALL 4 TYPES) ----
-                below_sma_stocks = [h for h in portfolio if h["sma_200"] > 0 and not h["above_sma"]]
-                if below_sma_stocks:
-                    # Trigger alerts if not already done this session
-                    new_triggers = [h["symbol"] for h in below_sma_stocks if h["symbol"] not in st.session_state.get("alert_stocks_triggered", [])]
-                    if new_triggers:
-                        triggered = check_and_trigger_alerts(below_sma_stocks)
-                        st.session_state["alert_stocks_triggered"] = list(set(
-                            st.session_state.get("alert_stocks_triggered", []) + [h["symbol"] for h in triggered]
-                        ))
-                    
-                    for h in below_sma_stocks:
-                        sym_display = h["symbol"].replace(".NS", "")
-                        for _ in range(3):  # Repeat alert 3 times for urgency
-                            st.markdown(f"""
-                            <div class="portfolio-alert-box">
-                                🚨🚨 CRITICAL ALERT: {sym_display} is BELOW 200 SMA! EXIT IMMEDIATELY! 🚨🚨<br/>
-                                LTP: ₹{h['ltp']} | 200 SMA: ₹{h['sma_200']} | Distance: {h['dist_pct']}%<br/>
-                                <small>You bought at ₹{h['buy_price']} × {h['quantity']} shares</small>
-                            </div>
-                            """, unsafe_allow_html=True)
-                
-                # ---- Excel-Style Portfolio Table ----
-                st.markdown("#### 📋 Your Holdings — Excel Dashboard View")
-                
-                table_data = []
-                for h in portfolio:
-                    sym = h["symbol"]
-                    buy = h["buy_price"]
-                    qty = h["quantity"]
-                    invested = round(buy * qty, 2)
-                    ltp = h["ltp"]
-                    curr_val = round(ltp * qty, 2) if ltp > 0 else 0
-                    pl_pct = round(((ltp - buy) / buy) * 100, 2) if ltp > 0 and buy > 0 else 0
-                    sma = h["sma_200"]
-                    dist = h["dist_pct"]
-                    above = h["above_sma"] if sma > 0 else True
-                    signal = h.get("signal", "WAIT")
-                    
-                    if sma > 0 and not above:
-                        status_html = '<span class="portfolio-status-badge portfolio-status-red">🔴 BELOW 200 SMA — EXIT NOW!</span>'
-                    elif sma > 0:
-                        status_html = '<span class="portfolio-status-badge portfolio-status-green">✅ Above 200 SMA</span>'
-                    else:
-                        status_html = '<span class="portfolio-status-badge portfolio-status-green">⏳ No SMA Data</span>'
-                    
-                    # Signal display
-                    if signal == "EXIT":
-                        signal_html = '<span style="color:#FF0000; font-weight:bold; font-size:1.1rem;">🚨 EXIT</span>'
-                    elif signal == "BUY":
-                        signal_html = '<span style="color:#006600; font-weight:bold;">✅ BUY</span>'
-                    elif signal == "HOLD":
-                        signal_html = '<span style="color:#CC8800; font-weight:bold;">✅ HOLD</span>'
-                    else:
-                        signal_html = '<span style="color:#888;">⏳ WAIT</span>'
-                    
-                    dist_str = f"{dist}%" if sma > 0 else "N/A"
-                    dist_color = "#00CC00" if dist >= 0 else "#FF0000"
-                    dist_html = f'<span style="color:{dist_color}; font-weight:bold;">{dist_str}</span>'
-                    
-                    pl_color = "#00CC00" if pl_pct >= 0 else "#FF0000"
-                    pl_icon = "📈" if pl_pct >= 0 else "📉"
-                    pl_html = f'{pl_icon} <span style="color:{pl_color}; font-weight:bold;">{pl_pct}%</span>' if ltp > 0 else "—"
-                    
-                    table_data.append({
-                        "Symbol": sym.replace(".NS", ""),
-                        "Buy Price": f"₹{buy}",
-                        "Qty": qty,
-                        "Invested": f"₹{invested}",
-                        "LTP": f"₹{ltp}" if ltp > 0 else "—",
-                        "Value": f"₹{curr_val}" if curr_val > 0 else "—",
-                        "P&L %": pl_html,
-                        "200 SMA": f"₹{sma}" if sma > 0 else "—",
-                        "SMA Dist %": dist_html,
-                        "Signal": signal_html,
-                        "Status": status_html,
-                        "_above": above,
-                        "_sma": sma
-                    })
-                
-                # Render as Excel-style HTML table
-                rows_html = ""
-                for row in table_data:
-                    row_class = "portfolio-row-red" if (row["_sma"] > 0 and not row["_above"]) else "portfolio-row-green"
-                    rows_html += f"""
-                    <tr class="{row_class}">
-                        <td><strong>{row['Symbol']}</strong></td>
-                        <td>{row['Buy Price']}</td>
-                        <td>{row['Qty']}</td>
-                        <td>{row['Invested']}</td>
-                        <td>{row['LTP']}</td>
-                        <td>{row['Value']}</td>
-                        <td>{row['P&L %']}</td>
-                        <td>{row['200 SMA']}</td>
-                        <td>{row['SMA Dist %']}</td>
-                        <td>{row['Signal']}</td>
-                        <td>{row['Status']}</td>
-                    </tr>
-                    """
-                
-                st.markdown(f"""
-                <style>
-                    .portfolio-table {{ width: 100%; border-collapse: collapse; font-size: 0.9rem; font-family: 'Consolas', 'Courier New', monospace; }}
-                    .portfolio-table th {{ background: #0B192C; color: white; padding: 12px 8px; text-align: left; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.5px; }}
-                    .portfolio-table td {{ padding: 10px 8px; border-bottom: 1px solid #E0E0E0; }}
-                    .portfolio-table tr:hover {{ background: rgba(14, 165, 233, 0.08) !important; }}
-                </style>
-                <table class="portfolio-table">
-                    <thead>
-                        <tr>
-                            <th>Symbol</th><th>Buy Price</th><th>Qty</th><th>Invested</th>
-                            <th>LTP</th><th>Value</th><th>P&L %</th><th>200 SMA</th><th>SMA Dist %</th><th>Signal</th><th>Status</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {rows_html}
-                    </tbody>
-                </table>
-                <div style="text-align:right; font-size:0.75rem; color:#888; margin-top:5px;">
-                    Auto-refreshes every 15 min • Last update: {portfolio[0]["last_updated"] if portfolio and portfolio[0]["last_updated"] else "—"}
-                </div>
-                """, unsafe_allow_html=True)
-                
-                # ---- Remove Stock ----
-                st.markdown("---")
-                col_rem1, col_rem2, col_rem3 = st.columns([2, 2, 6])
-                with col_rem1:
-                    if portfolio:
-                        rem_sym = st.selectbox(
-                            "🗑️ Remove a Holding",
-                            [h["symbol"] for h in portfolio],
-                            key="p2_port_rem_sym"
-                        )
-                with col_rem2:
-                    st.markdown("<br/>", unsafe_allow_html=True)
-                    if portfolio and st.button("🗑️ Remove", use_container_width=True, key="p2_port_rem_btn"):
-                        st.session_state["portfolio"] = remove_holding(rem_sym)
-                        st.session_state["alert_stocks_triggered"] = [h["symbol"] for h in st.session_state["portfolio"] 
-                                                                       if h.get("sma_200", 0) > 0 and not h.get("above_sma", False)]
-                        st.warning(f"Removed {rem_sym.replace('.NS', '')} from portfolio.")
-                        st.rerun()
-                
-                # ---- Summary Stats ----
-                st.markdown("---")
-                total_invested = sum(h["buy_price"] * h["quantity"] for h in portfolio)
-                total_value = sum((h["ltp"] * h["quantity"]) if h["ltp"] > 0 else 0 for h in portfolio)
-                overall_pl = round(((total_value - total_invested) / total_invested) * 100, 2) if total_invested > 0 else 0
-                
-                # Count signals
-                buy_count = sum(1 for h in portfolio if h.get("signal") == "BUY")
-                hold_count = sum(1 for h in portfolio if h.get("signal") == "HOLD")
-                exit_count = sum(1 for h in portfolio if h.get("signal") == "EXIT")
-                
-                cols_s = st.columns(5)
-                cols_s[0].metric("💰 Total Invested", f"₹{total_invested:,.2f}")
-                cols_s[1].metric("📊 Current Value", f"₹{total_value:,.2f}")
-                pl_color_s = "#00CC00" if overall_pl >= 0 else "#FF0000"
-                cols_s[2].markdown(f'<div style="text-align:center"><span style="font-size:1.2rem; font-weight:bold;">Overall P&L</span><br/><span style="font-size:2rem; font-weight:bold; color:{pl_color_s};">{overall_pl}%</span></div>', unsafe_allow_html=True)
-                cols_s[3].metric("🟢 BUY / HOLD", f"{buy_count} / {hold_count}")
-                cols_s[4].metric("🚨 EXIT Signals", f"{exit_count}", delta_color="off")
+            render_portfolio_page(suffix="p2")
 
         # --- TAB 7: Newsletter Dispatcher (Page 2) ---
         with tab7:

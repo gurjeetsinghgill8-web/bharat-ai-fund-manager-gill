@@ -19,3 +19,4 @@ api_key.txt
 # OS-specific files
 .DS_Store
 Thumbs.db
+screener_cache/

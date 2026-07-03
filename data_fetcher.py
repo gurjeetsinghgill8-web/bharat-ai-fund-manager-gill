@@ -6,6 +6,7 @@ import concurrent.futures
 import yfinance as yf
 import pandas as pd
 from dotenv import load_dotenv
+from screeners_scraper import fetch_screener_data
 
 # Load configuration
 load_dotenv()
@@ -60,25 +61,38 @@ def fetch_stock_data(ticker):
         elif not hist.empty:
             sma_200 = float(hist['Close'].mean())
             
-        # 2. Fetch Annual and Quarterly Financials
-        financials = t.financials
-        quarterly_financials = t.quarterly_financials
+        # 2. Fetch Sales & Profit History
+        # PREFERRED: Screeners.in — provides 10+ years of clean financial data (needed for CAGR)
+        # FALLBACK: yfinance financials — provides max ~4 years for Indian stocks (5Y CAGR fails)
+        #
+        # NOTE: Most Indian stocks have only 4 data points from yfinance, which is insufficient
+        # for 5Y CAGR calculation (needs >= 5). Screeners.in provides 12 years.
+        # The screener cache persists for 14 days, so repeated scans are instant.
         
-        # Extract Sales (Total Revenue)
-        sales_history = []
-        if financials is not None and not financials.empty:
-            revenue_keys = [k for k in financials.index if 'Revenue' in k or 'Sales' in k or 'Operating Revenue' in k]
-            if revenue_keys:
-                sales_history = financials.loc[revenue_keys[0]].dropna().tolist()
+        # Try screeners.in first for reliable CAGR data
+        # Cache is checked internally — no network call if cached
+        screener_result = fetch_screener_data(ticker)
+        
+        if screener_result["success"] and len(screener_result["sales"]) >= 5:
+            sales_history = screener_result["sales"]
+            profit_history = screener_result["profit"]
+        else:
+            # Fallback to yfinance
+            financials = t.financials
+            sales_history = []
+            if financials is not None and not financials.empty:
+                revenue_keys = [k for k in financials.index if 'Revenue' in k or 'Sales' in k or 'Operating Revenue' in k]
+                if revenue_keys:
+                    sales_history = financials.loc[revenue_keys[0]].dropna().tolist()
+                    
+            profit_history = []
+            if financials is not None and not financials.empty:
+                profit_keys = [k for k in financials.index if 'Net Income' in k or 'Profit' in k]
+                if profit_keys:
+                    profit_history = financials.loc[profit_keys[0]].dropna().tolist()
                 
-        # Extract Net Profits (Net Income)
-        profit_history = []
-        if financials is not None and not financials.empty:
-            profit_keys = [k for k in financials.index if 'Net Income' in k or 'Profit' in k]
-            if profit_keys:
-                profit_history = financials.loc[profit_keys[0]].dropna().tolist()
-                
-        # Extract Quarterly Profits
+        # Extract Quarterly Profits (from yfinance — only needed for quarter_score)
+        quarterly_financials = t.quarterly_financials
         quarterly_profits = []
         if quarterly_financials is not None and not quarterly_financials.empty:
             profit_keys = [k for k in quarterly_financials.index if 'Net Income' in k or 'Profit' in k]

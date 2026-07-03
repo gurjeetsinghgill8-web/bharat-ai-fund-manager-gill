@@ -21,7 +21,10 @@ import json
 import requests
 from dotenv import load_dotenv
 
-load_dotenv()
+# Get the directory where THIS script lives (works from ANY working directory)
+_HERE = os.path.dirname(os.path.abspath(__file__))
+
+load_dotenv(os.path.join(_HERE, ".env"))
 
 # ══════════════════════════════════════════════════════════════
 # KEY LOADER — Reads from 3 sources in priority order
@@ -30,20 +33,26 @@ load_dotenv()
 def _read_jarvis_keys_file():
     """Parse jarvis_keys.txt and return a dict of keys found."""
     keys = {}
-    try:
-        with open("jarvis_keys.txt", "r") as f:
-            for line in f:
-                line = line.strip()
-                if line and not line.startswith("#") and "=" in line:
-                    parts = line.split("=", 1)
-                    key_name = parts[0].strip()
-                    key_val = parts[1].strip()
-                    if key_val and len(key_val) > 5:
-                        keys[key_name] = key_val
-    except FileNotFoundError:
-        pass
-    except Exception:
-        pass
+    # Try script directory first, then CWD
+    possible_paths = [
+        os.path.join(_HERE, "jarvis_keys.txt"),
+        os.path.join(os.getcwd(), "jarvis_keys.txt"),
+    ]
+    for filepath in possible_paths:
+        try:
+            if os.path.exists(filepath):
+                with open(filepath, "r") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith("#") and "=" in line:
+                            parts = line.split("=", 1)
+                            key_name = parts[0].strip()
+                            key_val = parts[1].strip()
+                            if key_val and len(key_val) > 5:
+                                keys[key_name] = key_val
+                break  # Found file, stop searching
+        except Exception:
+            pass
     return keys
 
 

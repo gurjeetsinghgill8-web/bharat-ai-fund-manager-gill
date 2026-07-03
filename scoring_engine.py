@@ -114,16 +114,19 @@ def score_stock(stock_data):
     profit_cagr_3y = calculate_cagr_for_years(profit_hist, 2)
     profit_cagr_all = calculate_cagr(profit_hist)
 
-    # Condition: Sales growth 3Years > Sales growth 5Years AND Sales growth > Sales growth 3Years
+    # ── UPGRADED CRITERIA (Gurdeep's Sensible Logic) ──
+    # Sales growth 3Years > 10 AND Sales growth > Sales growth 3Years AND Sales growth 5Years > 10
     sales_growth_accelerating = False
-    if (sales_cagr_3y is not None and sales_cagr_5y is not None and sales_cagr_all is not None
-            and sales_cagr_3y > sales_cagr_5y and sales_cagr_all > sales_cagr_3y):
+    if (sales_cagr_3y is not None and sales_cagr_all is not None and sales_cagr_5y is not None
+            and sales_cagr_3y > 10.0 and sales_cagr_all > sales_cagr_3y and sales_cagr_5y > 10.0):
         sales_growth_accelerating = True
 
-    # Condition: Profit growth > 10 AND Profit growth 3Years > Profit growth 5Years AND Profit growth > Profit growth 3Years
+    # Profit growth > 10 AND Profit growth 3Years > 10 AND Profit growth > Profit growth 3Years
+    # AND Profit growth 3Years > Profit growth 5Years
     profit_growth_accelerating = False
     if (profit_cagr_all is not None and profit_cagr_3y is not None and profit_cagr_5y is not None
-            and profit_cagr_all > 10.0 and profit_cagr_3y > profit_cagr_5y and profit_cagr_all > profit_cagr_3y):
+            and profit_cagr_all > 10.0 and profit_cagr_3y > 10.0
+            and profit_cagr_all > profit_cagr_3y and profit_cagr_3y > profit_cagr_5y):
         profit_growth_accelerating = True
 
     # Overall CAGR Accelerating Flag
@@ -137,7 +140,7 @@ def score_stock(stock_data):
         is_above_200_sma = current_price >= sma_200
         dist_pct = ((current_price - sma_200) / sma_200) * 100.0
 
-    # === 5-STAR RATING SYSTEM (CAGR Thresholds + Acceleration + Score > 12) ===
+    # === 5-STAR RATING SYSTEM (Upgraded with Gurdeep's Criteria) ===
     star_rating = 0
     # Check all CAGR values exist first
     if (sales_cagr_all is not None and sales_cagr_3y is not None and sales_cagr_5y is not None
@@ -145,14 +148,14 @@ def score_stock(stock_data):
         
         # ★ (1 Star): Sales & Profit Overall CAGR > 10%
         c1 = sales_cagr_all > 10.0 and profit_cagr_all > 10.0
-        # ★★ (2 Stars): Above + Sales & Profit 3Y CAGR > 10%
-        c2 = c1 and sales_cagr_3y > 10.0 and profit_cagr_3y > 10.0
-        # ★★★ (3 Stars): Above + Sales & Profit 5Y CAGR > 10%
-        c3 = c2 and sales_cagr_5y > 10.0 and profit_cagr_5y > 10.0
-        # ★★★★ (4 Stars): Above + Overall CAGR > 3Y CAGR (acceleration)
-        c4 = c3 and sales_cagr_all > sales_cagr_3y and profit_cagr_all > profit_cagr_3y
-        # ★★★★★ (5 Stars): Above + Overall CAGR > 5Y CAGR AND Total Score > 12
-        c5 = c4 and sales_cagr_all > sales_cagr_5y and profit_cagr_all > profit_cagr_5y and total_score > 12
+        # ★★ (2 Stars): Above + Sales CAGR 3Y > 10% AND Sales CAGR 5Y > 10%
+        c2 = c1 and sales_cagr_3y > 10.0 and sales_cagr_5y > 10.0
+        # ★★★ (3 Stars): Above + Profit CAGR 3Y > 10% AND Profit CAGR 5Y > 10% (implicit from c2)
+        c3 = c2 and profit_cagr_3y > 10.0 and profit_cagr_5y > 10.0
+        # ★★★★ (4 Stars): Above + Sales growth accelerating: All > 3Y
+        c4 = c3 and sales_cagr_all > sales_cagr_3y
+        # ★★★★★ (5 Stars): Above + Profit growth accelerating: All > 3Y AND 3Y > 5Y AND Total Score > 12
+        c5 = c4 and profit_cagr_all > profit_cagr_3y and profit_cagr_3y > profit_cagr_5y and total_score > 12
         
         if c5:
             star_rating = 5  # ⭐⭐⭐⭐⭐ Elite
@@ -389,22 +392,25 @@ def score_stock_v2(stock_data):
     profit_cagr_3y = calculate_cagr_for_years(profit_hist, 2)
     profit_cagr_all = profit_cagr  # Already computed above
 
-    # Condition: Sales growth 3Years > Sales growth 5Years AND Sales growth > Sales growth 3Years
+    # ── UPGRADED CRITERIA (Gurdeep's Sensible Logic) ──
+    # Sales growth 3Years > 10 AND Sales growth > Sales growth 3Years AND Sales growth 5Years > 10
     sales_growth_accelerating = False
-    if (sales_cagr_3y is not None and sales_cagr_5y is not None and sales_cagr_all is not None
-            and sales_cagr_3y > sales_cagr_5y and sales_cagr_all > sales_cagr_3y):
+    if (sales_cagr_3y is not None and sales_cagr_all is not None and sales_cagr_5y is not None
+            and sales_cagr_3y > 10.0 and sales_cagr_all > sales_cagr_3y and sales_cagr_5y > 10.0):
         sales_growth_accelerating = True
 
-    # Condition: Profit growth > 10 AND Profit growth 3Years > Profit growth 5Years AND Profit growth > Profit growth 3Years
+    # Profit growth > 10 AND Profit growth 3Years > 10 AND Profit growth > Profit growth 3Years
+    # AND Profit growth 3Years > Profit growth 5Years
     profit_growth_accelerating = False
     if (profit_cagr_all is not None and profit_cagr_3y is not None and profit_cagr_5y is not None
-            and profit_cagr_all > 10.0 and profit_cagr_3y > profit_cagr_5y and profit_cagr_all > profit_cagr_3y):
+            and profit_cagr_all > 10.0 and profit_cagr_3y > 10.0
+            and profit_cagr_all > profit_cagr_3y and profit_cagr_3y > profit_cagr_5y):
         profit_growth_accelerating = True
 
     # Overall CAGR Accelerating Flag
     cagr_accelerating = sales_growth_accelerating and profit_growth_accelerating
 
-    # === 5-STAR RATING SYSTEM (CAGR Thresholds + Acceleration + Score > 12) ===
+    # === 5-STAR RATING SYSTEM (Upgraded with Gurdeep's Criteria) ===
     star_rating = 0
     # Check all CAGR values exist first
     if (sales_cagr_all is not None and sales_cagr_3y is not None and sales_cagr_5y is not None
@@ -412,14 +418,14 @@ def score_stock_v2(stock_data):
         
         # ★ (1 Star): Sales & Profit Overall CAGR > 10%
         c1 = sales_cagr_all > 10.0 and profit_cagr_all > 10.0
-        # ★★ (2 Stars): Above + Sales & Profit 3Y CAGR > 10%
-        c2 = c1 and sales_cagr_3y > 10.0 and profit_cagr_3y > 10.0
-        # ★★★ (3 Stars): Above + Sales & Profit 5Y CAGR > 10%
-        c3 = c2 and sales_cagr_5y > 10.0 and profit_cagr_5y > 10.0
-        # ★★★★ (4 Stars): Above + Overall CAGR > 3Y CAGR (acceleration)
-        c4 = c3 and sales_cagr_all > sales_cagr_3y and profit_cagr_all > profit_cagr_3y
-        # ★★★★★ (5 Stars): Above + Overall CAGR > 5Y CAGR AND Total Score > 12
-        c5 = c4 and sales_cagr_all > sales_cagr_5y and profit_cagr_all > profit_cagr_5y and total_score > 12
+        # ★★ (2 Stars): Above + Sales CAGR 3Y > 10% AND Sales CAGR 5Y > 10%
+        c2 = c1 and sales_cagr_3y > 10.0 and sales_cagr_5y > 10.0
+        # ★★★ (3 Stars): Above + Profit CAGR 3Y > 10% AND Profit CAGR 5Y > 10%
+        c3 = c2 and profit_cagr_3y > 10.0 and profit_cagr_5y > 10.0
+        # ★★★★ (4 Stars): Above + Sales growth accelerating: All > 3Y
+        c4 = c3 and sales_cagr_all > sales_cagr_3y
+        # ★★★★★ (5 Stars): Above + Profit growth accelerating: All > 3Y AND 3Y > 5Y AND Total Score > 12
+        c5 = c4 and profit_cagr_all > profit_cagr_3y and profit_cagr_3y > profit_cagr_5y and total_score > 12
         
         if c5:
             star_rating = 5  # ⭐⭐⭐⭐⭐ Elite

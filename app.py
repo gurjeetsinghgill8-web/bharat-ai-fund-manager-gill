@@ -598,7 +598,8 @@ else:
             ]
             st.dataframe(
                 df_display[display_cols],
-                use_container_width=True
+                use_container_width=True,
+                height=min(600, 35 * len(df_display) + 40)
             )
             
             st.markdown("---")
@@ -934,7 +935,8 @@ else:
                 
             st.dataframe(
                 display_df,
-                use_container_width=True
+                use_container_width=True,
+                height=min(600, 35 * len(display_df) + 40)
             )
             
             st.markdown("---")

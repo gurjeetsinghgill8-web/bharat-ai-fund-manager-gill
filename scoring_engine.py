@@ -2,6 +2,93 @@ import pandas as pd
 import numpy as np
 from symbols import get_category
 
+
+# ══════════════════════════════════════════════════════════════
+# CAGR STAR RATING SYSTEM (Gurdeep's 24-Star System)
+# ══════════════════════════════════════════════════════════════
+# Each CAGR value gets stars based on threshold:
+#   ≥ 10% → 1 star
+#   ≥ 15% → 2 stars
+#   ≥ 20% → 3 stars
+#   ≥ 25% → 4 stars
+#
+# Sales side (Overall + 3Y + 5Y) = max 12 stars
+# Profit side (Overall + 3Y + 5Y) = max 12 stars
+# Total = max 24 stars
+# ══════════════════════════════════════════════════════════════
+
+def _cagr_to_stars(cagr_value):
+    """Convert a single CAGR percentage to star count (0-4)."""
+    if cagr_value is None or cagr_value <= 0:
+        return 0
+    if cagr_value >= 25.0:
+        return 4
+    if cagr_value >= 20.0:
+        return 3
+    if cagr_value >= 15.0:
+        return 2
+    if cagr_value >= 10.0:
+        return 1
+    return 0
+
+
+def _cagr_stars_display(cagr_value):
+    """Returns (star_count, display_string) like (3, '20.5') or (0, '0')."""
+    stars = _cagr_to_stars(cagr_value)
+    val_str = f"{cagr_value:.1f}" if cagr_value and cagr_value > 0 else "0"
+    return stars, val_str
+
+
+def _make_star_bar(star_count, max_stars=4):
+    """Create visual star string like ⭐⭐⭐ (3 stars)."""
+    return "⭐" * star_count + "☆" * (max_stars - star_count)
+
+
+def compute_cagr_stars(sales_cagr_all, sales_cagr_3y, sales_cagr_5y,
+                        profit_cagr_all, profit_cagr_3y, profit_cagr_5y):
+    """
+    Compute the full Gurdeep 24-Star Rating.
+    Returns dict with all star info.
+    """
+    # Sales side stars
+    s_all_stars, s_all_val = _cagr_stars_display(sales_cagr_all)
+    s_3y_stars, s_3y_val = _cagr_stars_display(sales_cagr_3y)
+    s_5y_stars, s_5y_val = _cagr_stars_display(sales_cagr_5y)
+    
+    # Profit side stars
+    p_all_stars, p_all_val = _cagr_stars_display(profit_cagr_all)
+    p_3y_stars, p_3y_val = _cagr_stars_display(profit_cagr_3y)
+    p_5y_stars, p_5y_val = _cagr_stars_display(profit_cagr_5y)
+    
+    # Totals
+    sales_total_stars = s_all_stars + s_3y_stars + s_5y_stars
+    profit_total_stars = p_all_stars + p_3y_stars + p_5y_stars
+    grand_total_stars = sales_total_stars + profit_total_stars
+    
+    return {
+        # Sales individual
+        "Sales CAGR Stars": s_all_stars,
+        "Sales CAGR 3Y Stars": s_3y_stars,
+        "Sales CAGR 5Y Stars": s_5y_stars,
+        "Sales CAGR Star Bar": f"{_make_star_bar(s_all_stars)} {s_all_val}",
+        "Sales CAGR 3Y Star Bar": f"{_make_star_bar(s_3y_stars)} {s_3y_val}",
+        "Sales CAGR 5Y Star Bar": f"{_make_star_bar(s_5y_stars)} {s_5y_val}",
+        # Profit individual
+        "Profit CAGR Stars": p_all_stars,
+        "Profit CAGR 3Y Stars": p_3y_stars,
+        "Profit CAGR 5Y Stars": p_5y_stars,
+        "Profit CAGR Star Bar": f"{_make_star_bar(p_all_stars)} {p_all_val}",
+        "Profit CAGR 3Y Star Bar": f"{_make_star_bar(p_3y_stars)} {p_3y_val}",
+        "Profit CAGR 5Y Star Bar": f"{_make_star_bar(p_5y_stars)} {p_5y_val}",
+        # Totals
+        "Sales Star Total": sales_total_stars,  # /12
+        "Profit Star Total": profit_total_stars,  # /12
+        "Total Star Rating": grand_total_stars,  # /24
+        "Star Badge": f"{'⭐' * min(grand_total_stars, 24)} ({grand_total_stars}/24)"
+        if grand_total_stars > 0 else "No Stars",
+    }
+
+
 def score_stock(stock_data):
     """
     Applies the scoring rules to a single stock's data.
@@ -140,33 +227,14 @@ def score_stock(stock_data):
         is_above_200_sma = current_price >= sma_200
         dist_pct = ((current_price - sma_200) / sma_200) * 100.0
 
-    # === 5-STAR RATING SYSTEM (Upgraded with Gurdeep's Criteria) ===
-    star_rating = 0
-    # Check all CAGR values exist first
-    if (sales_cagr_all is not None and sales_cagr_3y is not None and sales_cagr_5y is not None
-            and profit_cagr_all is not None and profit_cagr_3y is not None and profit_cagr_5y is not None):
-        
-        # ★ (1 Star): Sales & Profit Overall CAGR > 10%
-        c1 = sales_cagr_all > 10.0 and profit_cagr_all > 10.0
-        # ★★ (2 Stars): Above + Sales CAGR 3Y > 10% AND Sales CAGR 5Y > 10%
-        c2 = c1 and sales_cagr_3y > 10.0 and sales_cagr_5y > 10.0
-        # ★★★ (3 Stars): Above + Profit CAGR 3Y > 10% AND Profit CAGR 5Y > 10% (implicit from c2)
-        c3 = c2 and profit_cagr_3y > 10.0 and profit_cagr_5y > 10.0
-        # ★★★★ (4 Stars): Above + Sales growth accelerating: All > 3Y
-        c4 = c3 and sales_cagr_all > sales_cagr_3y
-        # ★★★★★ (5 Stars): Above + Profit growth accelerating: All > 3Y AND 3Y > 5Y AND Total Score > 12
-        c5 = c4 and profit_cagr_all > profit_cagr_3y and profit_cagr_3y > profit_cagr_5y and total_score > 12
-        
-        if c5:
-            star_rating = 5  # ⭐⭐⭐⭐⭐ Elite
-        elif c4:
-            star_rating = 4  # ⭐⭐⭐⭐ Excellent
-        elif c3:
-            star_rating = 3  # ⭐⭐⭐ Strong
-        elif c2:
-            star_rating = 2  # ⭐⭐ Good
-        elif c1:
-            star_rating = 1  # ⭐ Decent
+    # === GURDEEP'S 24-STAR RATING SYSTEM (CAGR Thresholds) ===
+    # Sales stars: Overall + 3Y + 5Y = max 12
+    # Profit stars: Overall + 3Y + 5Y = max 12
+    # Grand total = max 24
+    star_data = compute_cagr_stars(
+        sales_cagr_all, sales_cagr_3y, sales_cagr_5y,
+        profit_cagr_all, profit_cagr_3y, profit_cagr_5y
+    )
 
     return {
         "Ticker": ticker,
@@ -182,7 +250,26 @@ def score_stock(stock_data):
         "Quarter Score": quarter_score,
         "PE vs EPS Score": pe_eps_score,
         "Total Score": total_score,
-        "Star Rating": star_rating,
+        # --- OLD STAR RATING (legacy, kept for backward compat) ---
+        "Star Rating": star_data["Total Star Rating"],
+        # --- NEW 24-STAR SYSTEM ---
+        "Sales CAGR Stars": star_data["Sales CAGR Stars"],
+        "Sales CAGR 3Y Stars": star_data["Sales CAGR 3Y Stars"],
+        "Sales CAGR 5Y Stars": star_data["Sales CAGR 5Y Stars"],
+        "Sales CAGR Star Bar": star_data["Sales CAGR Star Bar"],
+        "Sales CAGR 3Y Star Bar": star_data["Sales CAGR 3Y Star Bar"],
+        "Sales CAGR 5Y Star Bar": star_data["Sales CAGR 5Y Star Bar"],
+        "Profit CAGR Stars": star_data["Profit CAGR Stars"],
+        "Profit CAGR 3Y Stars": star_data["Profit CAGR 3Y Stars"],
+        "Profit CAGR 5Y Stars": star_data["Profit CAGR 5Y Stars"],
+        "Profit CAGR Star Bar": star_data["Profit CAGR Star Bar"],
+        "Profit CAGR 3Y Star Bar": star_data["Profit CAGR 3Y Star Bar"],
+        "Profit CAGR 5Y Star Bar": star_data["Profit CAGR 5Y Star Bar"],
+        "Sales Star Total": star_data["Sales Star Total"],   # /12
+        "Profit Star Total": star_data["Profit Star Total"], # /12
+        "Total Star Rating": star_data["Total Star Rating"], # /24
+        "Star Badge": star_data["Star Badge"],
+        # --- RED ALERT ---
         "Red Alert": is_red_alert,
         "Red Reasons": ", ".join(red_reasons) if red_reasons else "None",
         "Momentum Status": momentum_status,
@@ -410,33 +497,11 @@ def score_stock_v2(stock_data):
     # Overall CAGR Accelerating Flag
     cagr_accelerating = sales_growth_accelerating and profit_growth_accelerating
 
-    # === 5-STAR RATING SYSTEM (Upgraded with Gurdeep's Criteria) ===
-    star_rating = 0
-    # Check all CAGR values exist first
-    if (sales_cagr_all is not None and sales_cagr_3y is not None and sales_cagr_5y is not None
-            and profit_cagr_all is not None and profit_cagr_3y is not None and profit_cagr_5y is not None):
-        
-        # ★ (1 Star): Sales & Profit Overall CAGR > 10%
-        c1 = sales_cagr_all > 10.0 and profit_cagr_all > 10.0
-        # ★★ (2 Stars): Above + Sales CAGR 3Y > 10% AND Sales CAGR 5Y > 10%
-        c2 = c1 and sales_cagr_3y > 10.0 and sales_cagr_5y > 10.0
-        # ★★★ (3 Stars): Above + Profit CAGR 3Y > 10% AND Profit CAGR 5Y > 10%
-        c3 = c2 and profit_cagr_3y > 10.0 and profit_cagr_5y > 10.0
-        # ★★★★ (4 Stars): Above + Sales growth accelerating: All > 3Y
-        c4 = c3 and sales_cagr_all > sales_cagr_3y
-        # ★★★★★ (5 Stars): Above + Profit growth accelerating: All > 3Y AND 3Y > 5Y AND Total Score > 12
-        c5 = c4 and profit_cagr_all > profit_cagr_3y and profit_cagr_3y > profit_cagr_5y and total_score > 12
-        
-        if c5:
-            star_rating = 5  # ⭐⭐⭐⭐⭐ Elite
-        elif c4:
-            star_rating = 4  # ⭐⭐⭐⭐ Excellent
-        elif c3:
-            star_rating = 3  # ⭐⭐⭐ Strong
-        elif c2:
-            star_rating = 2  # ⭐⭐ Good
-        elif c1:
-            star_rating = 1  # ⭐ Decent
+    # === GURDEEP'S 24-STAR RATING SYSTEM (CAGR Thresholds) ===
+    star_data = compute_cagr_stars(
+        sales_cagr_all, sales_cagr_3y, sales_cagr_5y,
+        profit_cagr_all, profit_cagr_3y, profit_cagr_5y
+    )
 
     return {
         "Ticker": ticker,
@@ -456,11 +521,29 @@ def score_stock_v2(stock_data):
         "Profit CAGR 3Y": round(profit_cagr_3y, 2) if profit_cagr_3y is not None else 0.0,
         "Profit CAGR 5Y": round(profit_cagr_5y, 2) if profit_cagr_5y is not None else 0.0,
         "Profit CAGR Score": profit_cagr_score,
+        # --- NEW 24-STAR SYSTEM ---
+        "Sales CAGR Stars": star_data["Sales CAGR Stars"],
+        "Sales CAGR 3Y Stars": star_data["Sales CAGR 3Y Stars"],
+        "Sales CAGR 5Y Stars": star_data["Sales CAGR 5Y Stars"],
+        "Sales CAGR Star Bar": star_data["Sales CAGR Star Bar"],
+        "Sales CAGR 3Y Star Bar": star_data["Sales CAGR 3Y Star Bar"],
+        "Sales CAGR 5Y Star Bar": star_data["Sales CAGR 5Y Star Bar"],
+        "Profit CAGR Stars": star_data["Profit CAGR Stars"],
+        "Profit CAGR 3Y Stars": star_data["Profit CAGR 3Y Stars"],
+        "Profit CAGR 5Y Stars": star_data["Profit CAGR 5Y Stars"],
+        "Profit CAGR Star Bar": star_data["Profit CAGR Star Bar"],
+        "Profit CAGR 3Y Star Bar": star_data["Profit CAGR 3Y Star Bar"],
+        "Profit CAGR 5Y Star Bar": star_data["Profit CAGR 5Y Star Bar"],
+        "Sales Star Total": star_data["Sales Star Total"],   # /12
+        "Profit Star Total": star_data["Profit Star Total"], # /12
+        "Total Star Rating": star_data["Total Star Rating"], # /24
+        "Star Badge": star_data["Star Badge"],
+        # --- CAGR ACCELERATION ---
         "Sales Growth Accelerating": sales_growth_accelerating,
         "Profit Growth Accelerating": profit_growth_accelerating,
         "CAGR Accelerating": cagr_accelerating,
         "Value Fit": value_fit,
-        "Star Rating": star_rating,
+        "Star Rating": star_data["Total Star Rating"],
         "Total Score": total_score,
         "Red Alert": is_red_alert,
         "Red Reasons": ", ".join(red_reasons) if red_reasons else "None",

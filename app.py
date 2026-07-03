@@ -537,7 +537,7 @@ else:
         st.markdown("### Jarvis Autonomous Option/Equity Momentum Screener (v1.01 Upgrade)")
         
         # 1. Metric Display Cards (Page 1)
-        star_stocks = len(df[df["Star Rating"] == 3]) if not df.empty else 0
+        star_stocks = len(df[df["Total Star Rating"] >= 12]) if not df.empty else 0
         col1, col2, col3, col4, col5 = st.columns(5)
         with col1:
             st.markdown(f"""
@@ -597,16 +597,22 @@ else:
             st.subheader("Equities Ranked by Multi-Factor Score (Max 20)")
             st.write("Click on any row symbol in the dropdown below to trigger the Jarvis gen AI narrative breakdown.")
             
-            # Display table — full visibility with CAGR, Star Rating & 200 SMA
+            # Display table — full visibility with 24-Star CAGR System
             df_display = df.copy()
             df_display["CAGR Accelerating"] = df_display["CAGR Accelerating"].map({True: "✅", False: ""})
-            df_display["Star Rating"] = df_display["Star Rating"].map({
-                5: "⭐⭐⭐⭐⭐", 4: "⭐⭐⭐⭐", 3: "⭐⭐⭐", 2: "⭐⭐", 1: "⭐", 0: ""
-            })
+            # Build New Star Display: Sales Stars + Profit Stars = Total/24
+            df_display["Stars (Sales)"] = df_display.apply(
+                lambda r: f"{'⭐'*int(r['Sales CAGR Stars'])} {r['Sales CAGR Star Bar'].split()[-1]}" 
+                if r.get('Sales CAGR Stars', 0) > 0 else "-", axis=1)
+            df_display["Stars (Profit)"] = df_display.apply(
+                lambda r: f"{'⭐'*int(r['Profit CAGR Stars'])} {r['Profit CAGR Star Bar'].split()[-1]}"
+                if r.get('Profit CAGR Stars', 0) > 0 else "-", axis=1)
+            df_display["Star Badge"] = df_display["Star Badge"]
             display_cols = [
-                "Ticker", "Category", "Price", "Total Score", "Star Rating",
-                "Sales CAGR", "Sales CAGR 3Y", "Sales CAGR 5Y",
-                "Profit CAGR", "Profit CAGR 3Y", "Profit CAGR 5Y",
+                "Ticker", "Category", "Price", "Total Score",
+                "Stars (Sales)", "Stars (Profit)", "Star Badge",
+                "Sales CAGR 3Y", "Sales CAGR 5Y",
+                "Profit CAGR 3Y", "Profit CAGR 5Y",
                 "200 SMA", "200 SMA Dist %"
             ]
             st.dataframe(
@@ -864,7 +870,7 @@ else:
         st.markdown("### Jarvis Proximity & CAGR Value Engine")
         
         # 1. Metric Display Cards
-        star_stocks = len(df[df["Star Rating"] == 3]) if not df.empty else 0
+        star_stocks = len(df[df["Total Star Rating"] >= 12]) if not df.empty else 0
         col1, col2, col3, col4, col5 = st.columns(5)
         with col1:
             st.markdown(f"""
@@ -930,18 +936,15 @@ else:
             else:
                 df = df.sort_values(by="Total Score", ascending=False)
                 
-            # Display table — full visibility with CAGR, Star Rating & 200 SMA
+            # Display table — full visibility with 24-Star CAGR System
             display_cols = [
-                "Ticker", "Category", "Price", "Total Score", "Star Rating",
-                "Sales CAGR", "Sales CAGR 3Y", "Sales CAGR 5Y",
-                "Profit CAGR", "Profit CAGR 3Y", "Profit CAGR 5Y",
+                "Ticker", "Category", "Price", "Total Score", "Star Badge",
+                "Sales CAGR 3Y", "Sales CAGR 5Y",
+                "Profit CAGR 3Y", "Profit CAGR 5Y",
                 "200 SMA", "200 SMA Dist %"
             ]
             display_df = df.copy() if not df.empty else pd.DataFrame(columns=display_cols)
             if not display_df.empty:
-                display_df["Star Rating"] = display_df["Star Rating"].map({
-                    5: "⭐⭐⭐⭐⭐", 4: "⭐⭐⭐⭐", 3: "⭐⭐⭐", 2: "⭐⭐", 1: "⭐", 0: ""
-                })
                 display_df = display_df[display_cols]
                 
             st.dataframe(

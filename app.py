@@ -208,7 +208,7 @@ if has_active_api_key():
     st.sidebar.markdown("🧠 **AI Brain Status:** <span style='color:#00FF66;'>🟢 Jarvis Online</span>", unsafe_allow_html=True)
 else:
     st.sidebar.markdown("🧠 **AI Brain Status:** <span style='color:#FF0055;'>🔴 Jarvis Offline</span>", unsafe_allow_html=True)
-    st.sidebar.info("Add a Google Gemini key in `api_key.txt` or `.env` to wake Jarvis up.")
+	    st.sidebar.info("🔑 Add API key in Streamlit Secrets (JARVIS_GROQ_KEY) or jarvis_keys.txt to wake Jarvis up.")
 
 st.sidebar.markdown("---")
 st.sidebar.write("⚡ **Control Center**")

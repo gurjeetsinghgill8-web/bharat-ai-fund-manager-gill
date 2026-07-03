@@ -154,7 +154,8 @@ def fetch_stock_data(ticker):
             "price_history_6m": hist['Close'].tail(180).tolist() if len(hist) > 180 else hist['Close'].tolist(),
             "price_history_5y": hist['Close'].tail(5*252).tolist() if len(hist) > (5*252) else hist['Close'].tolist(),
             "sma_200": sma_200,
-            "timestamp": datetime.datetime.now()
+            "timestamp": datetime.datetime.now(),
+            "_cache_version": 2  # v2 = screeners.in data (10+ years CAGR)
         }
         return data
     except Exception as e:
@@ -167,9 +168,19 @@ def get_stock_data(ticker, force_refresh=False):
     if not force_refresh and is_cache_fresh(cache_path):
         try:
             with open(cache_path, 'rb') as f:
-                return pickle.load(f)
+                cached = pickle.load(f)
+            # Check cache version — v1 (yfinance only, <5 data points) needs refetch
+            if cached.get("_cache_version", 1) < 2:
+                print(f"{ticker}: Old cache format (v{cached.get('_cache_version', 1)}), refetching with screeners...")
+                force_refresh = True
+            # Also check if cached data has sufficient history for CAGR (>=5 data points)
+            elif len(cached.get("sales_history", [])) < 5 or len(cached.get("profit_history", [])) < 5:
+                print(f"{ticker}: Cache has insufficient history ({len(cached.get('sales_history', []))} sales pts), refetching...")
+                force_refresh = True
+            else:
+                return cached
         except Exception:
-            pass
+            force_refresh = True
             
     # Fetch fresh data
     data = fetch_stock_data(ticker)

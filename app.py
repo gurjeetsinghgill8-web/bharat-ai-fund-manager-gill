@@ -280,7 +280,8 @@ def render_portfolio_page(suffix="port"):
             # Trigger all alert systems for stocks below 200 SMA
             triggered = check_and_trigger_alerts(st.session_state["portfolio"])
             st.session_state["alert_stocks_triggered"] = [h["symbol"] for h in triggered]
-        st.rerun()
+            # Note: No st.rerun() here — WebSocket forward-msg cache misses on Streamlit Cloud.
+            # The updated data is already in session_state and renders immediately.
     
     portfolio = st.session_state["portfolio"]
     

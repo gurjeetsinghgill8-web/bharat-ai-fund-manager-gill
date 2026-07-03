@@ -6,7 +6,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from dotenv import load_dotenv
 
-from symbols import STOCKS, get_all_tickers
+from symbols import get_all_tickers
 from data_fetcher import get_stock_data, batch_update_stocks, batch_update_stocks_parallel
 from scoring_engine import run_scoring, score_stock, run_scoring_v2, score_stock_v2
 from report_generator import generate_excel_report, generate_pdf_report, generate_excel_report_v2, generate_pdf_report_v2

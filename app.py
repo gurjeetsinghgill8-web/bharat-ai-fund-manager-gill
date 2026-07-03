@@ -315,7 +315,8 @@ if not st.session_state["stock_cache"]:
 else:
     if engine_page == "⚡ Page 1: Momentum & Breakout":
         # 1. Metric Display Cards (Page 1)
-        col1, col2, col3, col4 = st.columns(4)
+        star_stocks = len(df[df["Star Rating"] == 3]) if not df.empty else 0
+        col1, col2, col3, col4, col5 = st.columns(5)
         with col1:
             st.markdown(f"""
             <div class="metric-container">
@@ -332,6 +333,13 @@ else:
             </div>
             """, unsafe_allow_html=True)
         with col3:
+            st.markdown(f"""
+            <div class="metric-container">
+                <div class="metric-value" style="color: #FFD700; text-shadow: 0px 0px 8px rgba(255, 215, 0, 0.5);">⭐⭐⭐ {star_stocks}</div>
+                <div class="metric-label">Star Stocks (3★ CAGR + Score)</div>
+            </div>
+            """, unsafe_allow_html=True)
+        with col4:
             sustained_count = len(continuous)
             st.markdown(f"""
             <div class="metric-container">
@@ -339,7 +347,7 @@ else:
                 <div class="metric-label">Sustained Momentum</div>
             </div>
             """, unsafe_allow_html=True)
-        with col4:
+        with col5:
             alerts_count = len(red_alerts)
             st.markdown(f"""
             <div class="metric-container">
@@ -367,10 +375,18 @@ else:
             st.subheader("Equities Ranked by Multi-Factor Score (Max 20)")
             st.write("Click on any row symbol in the dropdown below to trigger the Jarvis gen AI narrative breakdown.")
             
-            # Display table
+            # Display table — full visibility with CAGR, Star Rating & 200 SMA
             df_display = df.copy()
             df_display["CAGR Accelerating"] = df_display["CAGR Accelerating"].map({True: "✅", False: ""})
-            display_cols = ["Ticker", "Category", "Price", "ATH", "3Y High", "Total Score", "CAGR Accelerating", "PE", "EPS", "Momentum Status"]
+            df_display["Star Rating"] = df_display["Star Rating"].map({
+                3: "⭐⭐⭐", 2: "⭐⭐", 1: "⭐", 0: ""
+            })
+            display_cols = [
+                "Ticker", "Category", "Price", "Total Score", "Star Rating",
+                "CAGR Accelerating", "Sales CAGR 3Y", "Sales CAGR 5Y",
+                "Profit CAGR 3Y", "Profit CAGR 5Y",
+                "200 SMA", "200 SMA Dist %", "PE", "EPS", "Momentum Status"
+            ]
             st.dataframe(
                 df_display[display_cols],
                 use_container_width=True
@@ -855,7 +871,8 @@ else:
     else:
         # Page 2 rendering logic
         # 1. Metric Display Cards
-        col1, col2, col3, col4 = st.columns(4)
+        star_stocks = len(df[df["Star Rating"] == 3]) if not df.empty else 0
+        col1, col2, col3, col4, col5 = st.columns(5)
         with col1:
             st.markdown(f"""
             <div class="metric-container">
@@ -872,6 +889,13 @@ else:
             </div>
             """, unsafe_allow_html=True)
         with col3:
+            st.markdown(f"""
+            <div class="metric-container">
+                <div class="metric-value" style="color: #FFD700; text-shadow: 0px 0px 8px rgba(255, 215, 0, 0.5);">⭐⭐⭐ {star_stocks}</div>
+                <div class="metric-label">Star Stocks (3★ CAGR + Score)</div>
+            </div>
+            """, unsafe_allow_html=True)
+        with col4:
             avg_dist = df["200 SMA Dist %"].mean() if not df.empty else 0.0
             st.markdown(f"""
             <div class="metric-container">
@@ -879,7 +903,7 @@ else:
                 <div class="metric-label">Avg Distance to 200 SMA</div>
             </div>
             """, unsafe_allow_html=True)
-        with col4:
+        with col5:
             alerts_count = len(red_alerts)
             st.markdown(f"""
             <div class="metric-container">
@@ -913,14 +937,18 @@ else:
             else:
                 df = df.sort_values(by="Total Score", ascending=False)
                 
-            # Display table
-            display_cols = ["Ticker", "Category", "Price", "Total Score", "Double ATH Status", "CAGR Accelerating", "200 SMA", "200 SMA Dist %", "Sales CAGR", "Profit CAGR", "PE", "EPS", "Value Fit"]
+            # Display table — full visibility with CAGR, Star Rating & 200 SMA
+            display_cols = [
+                "Ticker", "Category", "Price", "Total Score", "Star Rating",
+                "CAGR Accelerating", "Sales CAGR 3Y", "Sales CAGR 5Y",
+                "Profit CAGR 3Y", "Profit CAGR 5Y",
+                "200 SMA", "200 SMA Dist %", "PE", "EPS", "Value Fit"
+            ]
             display_df = df.copy() if not df.empty else pd.DataFrame(columns=display_cols)
             if not display_df.empty:
-                display_df["Double ATH Status"] = display_df.apply(
-                    lambda r: "🟢 Double Peak" if r["Sales Score"] == 5 and r["Profit Score"] == 5 else "🔴 ALERT: Not Peak",
-                    axis=1
-                )
+                display_df["Star Rating"] = display_df["Star Rating"].map({
+                    3: "⭐⭐⭐", 2: "⭐⭐", 1: "⭐", 0: ""
+                })
                 display_df["CAGR Accelerating"] = display_df["CAGR Accelerating"].map({True: "✅ Growth Accelerating", False: ""})
                 display_df["Value Fit"] = display_df["Value Fit"].map({True: "⭐", False: ""})
                 display_df = display_df[display_cols]

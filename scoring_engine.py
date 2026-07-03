@@ -129,6 +129,23 @@ def score_stock(stock_data):
     # Overall CAGR Accelerating Flag
     cagr_accelerating = sales_growth_accelerating and profit_growth_accelerating
 
+    # --- 200 SMA Fields (from stock_data cache) ---
+    sma_200 = stock_data.get("sma_200", 0.0)
+    is_above_200_sma = True
+    dist_pct = 0.0
+    if sma_200 > 0:
+        is_above_200_sma = current_price >= sma_200
+        dist_pct = ((current_price - sma_200) / sma_200) * 100.0
+
+    # --- Star Rating (1-3 stars based on CAGR quality + score) ---
+    star_rating = 0
+    if cagr_accelerating and total_score >= 14:
+        star_rating = 3  # ⭐⭐⭐ Best quality
+    elif (sales_growth_accelerating or profit_growth_accelerating) and total_score >= 10:
+        star_rating = 2  # ⭐⭐ Good quality
+    elif total_score >= 8:
+        star_rating = 1  # ⭐ Decent
+
     return {
         "Ticker": ticker,
         "Category": get_category(ticker),
@@ -143,6 +160,7 @@ def score_stock(stock_data):
         "Quarter Score": quarter_score,
         "PE vs EPS Score": pe_eps_score,
         "Total Score": total_score,
+        "Star Rating": star_rating,
         "Red Alert": is_red_alert,
         "Red Reasons": ", ".join(red_reasons) if red_reasons else "None",
         "Momentum Status": momentum_status,
@@ -159,7 +177,10 @@ def score_stock(stock_data):
         "Profit CAGR 5Y": round(profit_cagr_5y, 2) if profit_cagr_5y is not None else 0.0,
         "Sales Growth Accelerating": sales_growth_accelerating,
         "Profit Growth Accelerating": profit_growth_accelerating,
-        "CAGR Accelerating": cagr_accelerating
+        "CAGR Accelerating": cagr_accelerating,
+        "200 SMA": round(sma_200, 2) if sma_200 else 0.0,
+        "200 SMA Dist %": round(dist_pct, 2) if sma_200 else 0.0,
+        "Is Above 200 SMA": is_above_200_sma
     }
 
 def run_scoring(batch_data):
@@ -364,6 +385,15 @@ def score_stock_v2(stock_data):
     # Overall CAGR Accelerating Flag
     cagr_accelerating = sales_growth_accelerating and profit_growth_accelerating
 
+    # --- Star Rating (1-3 stars based on CAGR quality + score) ---
+    star_rating = 0
+    if cagr_accelerating and total_score >= 11:
+        star_rating = 3  # ⭐⭐⭐ Best quality
+    elif (sales_growth_accelerating or profit_growth_accelerating) and total_score >= 8:
+        star_rating = 2  # ⭐⭐ Good quality
+    elif total_score >= 6:
+        star_rating = 1  # ⭐ Decent
+
     return {
         "Ticker": ticker,
         "Category": get_category(ticker),
@@ -386,6 +416,7 @@ def score_stock_v2(stock_data):
         "Profit Growth Accelerating": profit_growth_accelerating,
         "CAGR Accelerating": cagr_accelerating,
         "Value Fit": value_fit,
+        "Star Rating": star_rating,
         "Total Score": total_score,
         "Red Alert": is_red_alert,
         "Red Reasons": ", ".join(red_reasons) if red_reasons else "None",

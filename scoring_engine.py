@@ -137,14 +137,33 @@ def score_stock(stock_data):
         is_above_200_sma = current_price >= sma_200
         dist_pct = ((current_price - sma_200) / sma_200) * 100.0
 
-    # --- Star Rating (1-3 stars based on CAGR quality + score) ---
+    # === 5-STAR RATING SYSTEM (CAGR Thresholds + Acceleration + Score > 12) ===
     star_rating = 0
-    if cagr_accelerating and total_score >= 14:
-        star_rating = 3  # ⭐⭐⭐ Best quality
-    elif (sales_growth_accelerating or profit_growth_accelerating) and total_score >= 10:
-        star_rating = 2  # ⭐⭐ Good quality
-    elif total_score >= 8:
-        star_rating = 1  # ⭐ Decent
+    # Check all CAGR values exist first
+    if (sales_cagr_all is not None and sales_cagr_3y is not None and sales_cagr_5y is not None
+            and profit_cagr_all is not None and profit_cagr_3y is not None and profit_cagr_5y is not None):
+        
+        # ★ (1 Star): Sales & Profit Overall CAGR > 10%
+        c1 = sales_cagr_all > 10.0 and profit_cagr_all > 10.0
+        # ★★ (2 Stars): Above + Sales & Profit 3Y CAGR > 10%
+        c2 = c1 and sales_cagr_3y > 10.0 and profit_cagr_3y > 10.0
+        # ★★★ (3 Stars): Above + Sales & Profit 5Y CAGR > 10%
+        c3 = c2 and sales_cagr_5y > 10.0 and profit_cagr_5y > 10.0
+        # ★★★★ (4 Stars): Above + Overall CAGR > 3Y CAGR (acceleration)
+        c4 = c3 and sales_cagr_all > sales_cagr_3y and profit_cagr_all > profit_cagr_3y
+        # ★★★★★ (5 Stars): Above + Overall CAGR > 5Y CAGR AND Total Score > 12
+        c5 = c4 and sales_cagr_all > sales_cagr_5y and profit_cagr_all > profit_cagr_5y and total_score > 12
+        
+        if c5:
+            star_rating = 5  # ⭐⭐⭐⭐⭐ Elite
+        elif c4:
+            star_rating = 4  # ⭐⭐⭐⭐ Excellent
+        elif c3:
+            star_rating = 3  # ⭐⭐⭐ Strong
+        elif c2:
+            star_rating = 2  # ⭐⭐ Good
+        elif c1:
+            star_rating = 1  # ⭐ Decent
 
     return {
         "Ticker": ticker,
@@ -193,8 +212,8 @@ def run_scoring(batch_data):
     if df.empty:
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
         
-    # Sort by total score descending
-    df = df.sort_values(by="Total Score", ascending=False)
+    # Priority: Sort by Star Rating descending (5★ first), then Total Score descending
+    df = df.sort_values(by=["Star Rating", "Total Score"], ascending=[False, False])
     
     # Latest Highs (Price Score = 5)
     latest_highs_df = df[df["Price Score"] == 5].copy()
@@ -385,14 +404,33 @@ def score_stock_v2(stock_data):
     # Overall CAGR Accelerating Flag
     cagr_accelerating = sales_growth_accelerating and profit_growth_accelerating
 
-    # --- Star Rating (1-3 stars based on CAGR quality + score) ---
+    # === 5-STAR RATING SYSTEM (CAGR Thresholds + Acceleration + Score > 12) ===
     star_rating = 0
-    if cagr_accelerating and total_score >= 11:
-        star_rating = 3  # ⭐⭐⭐ Best quality
-    elif (sales_growth_accelerating or profit_growth_accelerating) and total_score >= 8:
-        star_rating = 2  # ⭐⭐ Good quality
-    elif total_score >= 6:
-        star_rating = 1  # ⭐ Decent
+    # Check all CAGR values exist first
+    if (sales_cagr_all is not None and sales_cagr_3y is not None and sales_cagr_5y is not None
+            and profit_cagr_all is not None and profit_cagr_3y is not None and profit_cagr_5y is not None):
+        
+        # ★ (1 Star): Sales & Profit Overall CAGR > 10%
+        c1 = sales_cagr_all > 10.0 and profit_cagr_all > 10.0
+        # ★★ (2 Stars): Above + Sales & Profit 3Y CAGR > 10%
+        c2 = c1 and sales_cagr_3y > 10.0 and profit_cagr_3y > 10.0
+        # ★★★ (3 Stars): Above + Sales & Profit 5Y CAGR > 10%
+        c3 = c2 and sales_cagr_5y > 10.0 and profit_cagr_5y > 10.0
+        # ★★★★ (4 Stars): Above + Overall CAGR > 3Y CAGR (acceleration)
+        c4 = c3 and sales_cagr_all > sales_cagr_3y and profit_cagr_all > profit_cagr_3y
+        # ★★★★★ (5 Stars): Above + Overall CAGR > 5Y CAGR AND Total Score > 12
+        c5 = c4 and sales_cagr_all > sales_cagr_5y and profit_cagr_all > profit_cagr_5y and total_score > 12
+        
+        if c5:
+            star_rating = 5  # ⭐⭐⭐⭐⭐ Elite
+        elif c4:
+            star_rating = 4  # ⭐⭐⭐⭐ Excellent
+        elif c3:
+            star_rating = 3  # ⭐⭐⭐ Strong
+        elif c2:
+            star_rating = 2  # ⭐⭐ Good
+        elif c1:
+            star_rating = 1  # ⭐ Decent
 
     return {
         "Ticker": ticker,
@@ -444,8 +482,8 @@ def run_scoring_v2(batch_data):
     if df.empty:
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
         
-    # Sort by 200 SMA Dist % ascending by default
-    df = df.sort_values(by="200 SMA Dist %", ascending=True)
+    # Priority: Sort by Star Rating descending (5★ first), then nearest to 200 SMA
+    df = df.sort_values(by=["Star Rating", "200 SMA Dist %"], ascending=[False, True])
     
     # Continuous Performers (Momentum Status != Normal)
     continuous_performers_df = df[df["Momentum Status"] != "Normal"].copy()

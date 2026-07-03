@@ -588,13 +588,13 @@ else:
             df_display = df.copy()
             df_display["CAGR Accelerating"] = df_display["CAGR Accelerating"].map({True: "✅", False: ""})
             df_display["Star Rating"] = df_display["Star Rating"].map({
-                3: "⭐⭐⭐", 2: "⭐⭐", 1: "⭐", 0: ""
+                5: "⭐⭐⭐⭐⭐", 4: "⭐⭐⭐⭐", 3: "⭐⭐⭐", 2: "⭐⭐", 1: "⭐", 0: ""
             })
             display_cols = [
                 "Ticker", "Category", "Price", "Total Score", "Star Rating",
-                "CAGR Accelerating", "Sales CAGR 3Y", "Sales CAGR 5Y",
-                "Profit CAGR 3Y", "Profit CAGR 5Y",
-                "200 SMA", "200 SMA Dist %", "PE", "EPS", "Momentum Status"
+                "Sales CAGR", "Sales CAGR 3Y", "Sales CAGR 5Y",
+                "Profit CAGR", "Profit CAGR 3Y", "Profit CAGR 5Y",
+                "200 SMA", "200 SMA Dist %"
             ]
             st.dataframe(
                 df_display[display_cols],
@@ -920,17 +920,15 @@ else:
             # Display table — full visibility with CAGR, Star Rating & 200 SMA
             display_cols = [
                 "Ticker", "Category", "Price", "Total Score", "Star Rating",
-                "CAGR Accelerating", "Sales CAGR 3Y", "Sales CAGR 5Y",
-                "Profit CAGR 3Y", "Profit CAGR 5Y",
-                "200 SMA", "200 SMA Dist %", "PE", "EPS", "Value Fit"
+                "Sales CAGR", "Sales CAGR 3Y", "Sales CAGR 5Y",
+                "Profit CAGR", "Profit CAGR 3Y", "Profit CAGR 5Y",
+                "200 SMA", "200 SMA Dist %"
             ]
             display_df = df.copy() if not df.empty else pd.DataFrame(columns=display_cols)
             if not display_df.empty:
                 display_df["Star Rating"] = display_df["Star Rating"].map({
-                    3: "⭐⭐⭐", 2: "⭐⭐", 1: "⭐", 0: ""
+                    5: "⭐⭐⭐⭐⭐", 4: "⭐⭐⭐⭐", 3: "⭐⭐⭐", 2: "⭐⭐", 1: "⭐", 0: ""
                 })
-                display_df["CAGR Accelerating"] = display_df["CAGR Accelerating"].map({True: "✅ Growth Accelerating", False: ""})
-                display_df["Value Fit"] = display_df["Value Fit"].map({True: "⭐", False: ""})
                 display_df = display_df[display_cols]
                 
             st.dataframe(

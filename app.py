@@ -383,7 +383,8 @@ def render_portfolio_page(suffix="port"):
         
         st.markdown("<br/>", unsafe_allow_html=True)
         
-        table_data = []
+        # Build a clean dataframe for Streamlit's native renderer
+        df_rows = []
         for h in portfolio:
             sym = h["symbol"]
             buy = h["buy_price"]
@@ -397,88 +398,49 @@ def render_portfolio_page(suffix="port"):
             above = h["above_sma"] if sma > 0 else True
             signal = h.get("signal", "WAIT")
             
-            if sma > 0 and not above:
-                status_html = '<span class="portfolio-status-badge portfolio-status-red">🔴 BELOW 200 SMA — EXIT NOW!</span>'
-            elif sma > 0:
-                status_html = '<span class="portfolio-status-badge portfolio-status-green">✅ Above 200 SMA</span>'
-            else:
-                status_html = '<span class="portfolio-status-badge portfolio-status-green">⏳ No SMA Data</span>'
-            
-            if signal == "EXIT":
-                signal_html = '<span style="color:#FF0000; font-weight:bold; font-size:1.1rem;">🚨 EXIT</span>'
-            elif signal == "BUY":
-                signal_html = '<span style="color:#006600; font-weight:bold;">✅ BUY</span>'
-            elif signal == "HOLD":
-                signal_html = '<span style="color:#CC8800; font-weight:bold;">✅ HOLD</span>'
-            else:
-                signal_html = '<span style="color:#888;">⏳ WAIT</span>'
-            
-            dist_str = f"{dist}%" if sma > 0 else "N/A"
-            dist_color = "#00CC00" if dist >= 0 else "#FF0000"
-            dist_html = f'<span style="color:{dist_color}; font-weight:bold;">{dist_str}</span>'
-            
-            pl_color = "#00CC00" if pl_pct >= 0 else "#FF0000"
-            pl_icon = "📈" if pl_pct >= 0 else "📉"
-            pl_html = f'{pl_icon} <span style="color:{pl_color}; font-weight:bold;">{pl_pct}%</span>' if ltp > 0 else "—"
-            
-            table_data.append({
+            df_rows.append({
                 "Symbol": sym.replace(".NS", ""),
-                "Buy Price": f"₹{buy}",
+                "Buy Price": buy,
                 "Qty": qty,
-                "Invested": f"₹{invested}",
-                "LTP": f"₹{ltp}" if ltp > 0 else "—",
-                "Value": f"₹{curr_val}" if curr_val > 0 else "—",
-                "P&L %": pl_html,
-                "200 SMA": f"₹{sma}" if sma > 0 else "—",
-                "SMA Dist %": dist_html,
-                "Signal": signal_html,
-                "Status": status_html,
-                "_above": above,
-                "_sma": sma
+                "Invested (₹)": invested,
+                "LTP (₹)": ltp if ltp > 0 else 0,
+                "Value (₹)": curr_val,
+                "P&L %": pl_pct,
+                "200 SMA (₹)": sma if sma > 0 else 0,
+                "SMA Dist %": dist,
+                "Above SMA": "✅ YES" if above else "🔴 NO",
+                "Signal": signal
             })
         
-        # Render as Excel-style HTML table
-        rows_html = ""
-        for row in table_data:
-            row_class = "portfolio-row-red" if (row["_sma"] > 0 and not row["_above"]) else "portfolio-row-green"
-            rows_html += f"""
-            <tr class="{row_class}">
-                <td><strong>{row['Symbol']}</strong></td>
-                <td>{row['Buy Price']}</td>
-                <td>{row['Qty']}</td>
-                <td>{row['Invested']}</td>
-                <td>{row['LTP']}</td>
-                <td>{row['Value']}</td>
-                <td>{row['P&L %']}</td>
-                <td>{row['200 SMA']}</td>
-                <td>{row['SMA Dist %']}</td>
-                <td>{row['Signal']}</td>
-                <td>{row['Status']}</td>
-            </tr>
-            """
+        df_display = pd.DataFrame(df_rows)
         
-        st.markdown(f"""
-        <style>
-            .portfolio-table {{ width: 100%; border-collapse: collapse; font-size: 0.9rem; font-family: 'Consolas', 'Courier New', monospace; }}
-            .portfolio-table th {{ background: #0B192C; color: white; padding: 12px 8px; text-align: left; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.5px; }}
-            .portfolio-table td {{ padding: 10px 8px; border-bottom: 1px solid #E0E0E0; }}
-            .portfolio-table tr:hover {{ background: rgba(14, 165, 233, 0.08) !important; }}
-        </style>
-        <table class="portfolio-table">
-            <thead>
-                <tr>
-                    <th>Symbol</th><th>Buy Price</th><th>Qty</th><th>Invested</th>
-                    <th>LTP</th><th>Value</th><th>P&L %</th><th>200 SMA</th><th>SMA Dist %</th><th>Signal</th><th>Status</th>
-                </tr>
-            </thead>
-            <tbody>
-                {rows_html}
-            </tbody>
-        </table>
-        <div style="text-align:right; font-size:0.75rem; color:#888; margin-top:5px;">
-            Auto-refreshes every 15 min • Last update: {portfolio[0]["last_updated"] if portfolio and portfolio[0]["last_updated"] else "—"}
-        </div>
-        """, unsafe_allow_html=True)
+        # Color-code rows based on Above SMA status
+        def _highlight_row(row):
+            if row["Above SMA"] == "🔴 NO":
+                return ["background-color: #FFE0E0"] * len(row)
+            elif row["P&L %"] >= 0:
+                return ["background-color: #E0FFE0"] * len(row)
+            return [""] * len(row)
+        
+        styled_df = df_display.style\
+            .apply(_highlight_row, axis=1)\
+            .format({
+                "Buy Price": "₹{:.2f}",
+                "Invested (₹)": "₹{:,.2f}",
+                "LTP (₹)": "₹{:.2f}",
+                "Value (₹)": "₹{:,.2f}",
+                "P&L %": "{:+.2f}%",
+                "200 SMA (₹)": "₹{:.2f}",
+                "SMA Dist %": "{:+.2f}%"
+            })\
+            .map(lambda v: "color: #00AA00; font-weight: bold" if isinstance(v, str) and "BUY" in v else (
+                "color: #FF0000; font-weight: bold" if isinstance(v, str) and "EXIT" in v else (
+                "color: #CC8800; font-weight: bold" if isinstance(v, str) and "HOLD" in v else ""))
+            )
+        
+        st.dataframe(styled_df, use_container_width=True, height=min(400, 35 * len(df_rows) + 40))
+        
+        st.caption(f"Auto-refreshes every 15 min • Last update: {portfolio[0]['last_updated'] if portfolio and portfolio[0]['last_updated'] else '—' }")
         
         # ---- Remove Stock ----
         st.markdown("---")

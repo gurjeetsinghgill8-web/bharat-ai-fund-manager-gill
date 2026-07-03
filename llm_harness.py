@@ -76,12 +76,35 @@ def _load_api_key_from_system(key_name):
     return ""
 
 
+def _load_api_key_from_streamlit_secrets(key_name):
+    """Try to load a key from Streamlit Cloud Secrets."""
+    try:
+        import streamlit as st
+        # Check direct key name first
+        val = st.secrets.get(key_name, "")
+        if val:
+            return val
+        # Then check JARVIS_GROQ_KEY etc.
+        system_var_map = {
+            "GROQ_API_KEY": "JARVIS_GROQ_KEY",
+            "XAI_API_KEY": "JARVIS_XAI_KEY",
+            "GEMINI_API_KEY": "JARVIS_GEMINI_KEY",
+        }
+        sys_var = system_var_map.get(key_name)
+        if sys_var:
+            return st.secrets.get(sys_var, "")
+    except Exception:
+        pass
+    return ""
+
+
 def get_key(key_name):
     """
-    Get a key from 3 sources in priority:
+    Get a key from 4 sources in priority:
       1. jarvis_keys.txt  (local file, gitignored)
       2. .env              (local env file, gitignored)
-      3. Windows System Environment Variables  (24/7, survives reboot)
+      3. Streamlit Cloud Secrets  (for cloud deployment)
+      4. Windows System Environment Variables  (24/7, survives reboot)
     """
     # Priority 1: jarvis_keys.txt
     file_keys = _read_jarvis_keys_file()
@@ -93,7 +116,12 @@ def get_key(key_name):
     if env_key:
         return env_key
 
-    # Priority 3: Windows System Environment Variables (24/7 mode)
+    # Priority 3: Streamlit Cloud Secrets
+    cloud_key = _load_api_key_from_streamlit_secrets(key_name)
+    if cloud_key:
+        return cloud_key
+
+    # Priority 4: Windows System Environment Variables (24/7 mode)
     sys_key = _load_api_key_from_system(key_name)
     if sys_key:
         return sys_key

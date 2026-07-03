@@ -153,7 +153,7 @@ def call_groq_api(prompt, key, system_instruction=None):
     messages.append({"role": "user", "content": prompt})
 
     payload = {
-        "model": "llama-3.1-70b-versatile",
+        "model": "llama-3.3-70b-versatile",
         "messages": messages,
         "temperature": 0.3
     }

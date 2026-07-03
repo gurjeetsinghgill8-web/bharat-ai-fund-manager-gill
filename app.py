@@ -208,7 +208,20 @@ if has_active_api_key():
     st.sidebar.markdown("🧠 **AI Brain Status:** <span style='color:#00FF66;'>🟢 Jarvis Online</span>", unsafe_allow_html=True)
 else:
     st.sidebar.markdown("🧠 **AI Brain Status:** <span style='color:#FF0055;'>🔴 Jarvis Offline</span>", unsafe_allow_html=True)
-    st.sidebar.info("🔑 Add API key in Streamlit Secrets (JARVIS_GROQ_KEY) or jarvis_keys.txt to wake Jarvis up.")
+    # Debug: check what's in Streamlit secrets
+    _debug_msg = "No secrets found"
+    try:
+        import streamlit as st
+        _all_secrets = list(st.secrets.keys())
+        if _all_secrets:
+            _debug_msg = f"Secrets keys found: {', '.join(_all_secrets)}"
+            for _k in _all_secrets:
+                _v = st.secrets[_k]
+                if len(str(_v)) > 5:
+                    _debug_msg += f" | {_k}=...{str(_v)[-4:]}"
+    except Exception as e:
+        _debug_msg = f"Secrets error: {e}"
+    st.sidebar.caption(f"🔍 {_debug_msg}")
 
 st.sidebar.markdown("---")
 st.sidebar.write("⚡ **Control Center**")

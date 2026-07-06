@@ -202,7 +202,10 @@ if "all_tickers" not in st.session_state:
 # ------------------ SIDEBAR ------------------
 st.sidebar.image("https://img.icons8.com/nolan/96/artificial-intelligence.png", width=90)
 st.sidebar.title("BHARAT AI GILL")
-st.sidebar.subheader("Jarvis Option/Fund Core v1.01")
+st.sidebar.subheader("Jarvis Option/Fund Core v1.02")
+
+# Show Turn Around info in sidebar
+st.sidebar.markdown("🔄 **Turn Around (TA):** Overall CAGR > Both 3Y & 5Y CAGR → Bonus ⭐ + 🔄 Badge", unsafe_allow_html=True)
 
 # Show Jarvis status in Sidebar
 if has_active_api_key():
@@ -585,7 +588,7 @@ else:
     if engine_page == "⚡ Page 1: Momentum & Breakout":
         # Title and header
         st.title("⚡ BHARAT AI FUND MANAGER GILL")
-        st.markdown("### Jarvis Autonomous Option/Equity Momentum Screener (v1.01 Upgrade)")
+        st.markdown("### Jarvis Autonomous Option/Equity Momentum Screener (v1.02 Upgrade — SMA Front + Turn Around Stars)")
         
         # 1. Metric Display Cards (Page 1)
         star_stocks = len(df[df["Total Star Rating"] >= 12]) if not df.empty else 0
@@ -926,7 +929,7 @@ else:
     else:
         # Page 2 — Title and header
         st.title("🛡️ BHARAT AI VALUE & 200 SMA SCREENER")
-        st.markdown("### Jarvis Proximity & CAGR Value Engine")
+        st.markdown("### Jarvis Proximity & CAGR Value Engine (v1.02 Upgrade)")
         
         # 1. Metric Display Cards
         star_stocks = len(df[df["Total Star Rating"] >= 12]) if not df.empty else 0

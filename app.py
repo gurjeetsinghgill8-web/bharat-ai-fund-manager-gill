@@ -654,14 +654,16 @@ else:
             # Display table — full visibility with 24-Star CAGR System
             df_display = df.copy()
             df_display["CAGR Accelerating"] = df_display["CAGR Accelerating"].map({True: "✅", False: ""})
-            # Build New Star Display: Sales Stars + Profit Stars = Total/24
+            # Build Clean Star Display: Single ⭐ + number (NOT multiple emojis)
             df_display["Stars (Sales)"] = df_display.apply(
-                lambda r: f"{'⭐'*int(r['Sales CAGR Stars'])} {r['Sales CAGR Star Bar'].split()[-1]}" 
-                if r.get('Sales CAGR Stars', 0) > 0 else "-", axis=1)
+                lambda r: f"⭐ {r['Sales Star Total']}/12" 
+                if r.get('Sales Star Total', 0) > 0 else "-", axis=1)
             df_display["Stars (Profit)"] = df_display.apply(
-                lambda r: f"{'⭐'*int(r['Profit CAGR Stars'])} {r['Profit CAGR Star Bar'].split()[-1]}"
-                if r.get('Profit CAGR Stars', 0) > 0 else "-", axis=1)
-            df_display["Star Badge"] = df_display["Star Badge"]
+                lambda r: f"⭐ {r['Profit Star Total']}/12"
+                if r.get('Profit Star Total', 0) > 0 else "-", axis=1)
+            # Clean Star Badge: Single ⭐ + total/24 + TA if applicable
+            df_display["Star Badge"] = df_display.apply(
+                lambda r: f"⭐ {r['Stars (Total)']} {'🔄 TA' if r.get('Turn Around', False) else ''}", axis=1)
             # Show Turn Around badge
             df_display["🔄 Turn Around"] = df_display["Turn Around"].map(
                 {True: "🔄 TA Story", False: ""})
@@ -669,8 +671,8 @@ else:
                 "Ticker", "Category", "Price", "200 SMA", "200 SMA Dist %",
                 "Total Score", "Stars (Total)",
                 "Stars (Sales)", "Stars (Profit)", "Star Badge",
-                "Sales CAGR 3Y", "Sales CAGR 5Y",
-                "Profit CAGR 3Y", "Profit CAGR 5Y",
+                "Sales CAGR", "Sales CAGR 3Y", "Sales CAGR 5Y",
+                "Profit CAGR", "Profit CAGR 3Y", "Profit CAGR 5Y",
                 "Sales+Profit CAGR Total",
                 "🔄 Turn Around",
                 "CAGR Accelerating"
@@ -1002,8 +1004,8 @@ else:
             display_cols = [
                 "Ticker", "Category", "Price", "200 SMA", "200 SMA Dist %",
                 "Total Score", "Stars (Total)",
-                "Sales CAGR 3Y", "Sales CAGR 5Y",
-                "Profit CAGR 3Y", "Profit CAGR 5Y",
+                "Sales CAGR", "Sales CAGR 3Y", "Sales CAGR 5Y",
+                "Profit CAGR", "Profit CAGR 3Y", "Profit CAGR 5Y",
                 "Sales+Profit CAGR Total"
             ]
             display_df = df.copy() if not df.empty else pd.DataFrame(columns=display_cols)

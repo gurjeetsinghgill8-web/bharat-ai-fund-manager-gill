@@ -15,7 +15,8 @@ from llm_harness import has_active_api_key, generate_ai_narrative, generate_ai_n
 from portfolio_manager import (
     load_portfolio, save_portfolio, add_holding, remove_holding, update_portfolio_prices,
     generate_portfolio_signals, export_portfolio_to_excel, check_and_trigger_alerts,
-    play_alert_sound, show_desktop_notification
+    play_alert_sound, show_desktop_notification,
+    export_portfolio_to_json, import_portfolio_from_json, merge_portfolios, send_portfolio_via_email
 )
 
 # Initialize config
@@ -316,6 +317,55 @@ def render_portfolio_page(suffix="port"):
                 st.session_state["portfolio"] = update_portfolio_prices(st.session_state["portfolio"])
                 st.rerun()
     
+    # ---- Portfolio Share / Import Section ----
+    with st.expander("📤 Share Portfolio / 📥 Import Portfolio", expanded=False):
+        col_sh1, col_sh2, col_sh3 = st.columns([2, 2, 2])
+        with col_sh1:
+            if portfolio and st.button("📤 Share via Email", key=f"{suffix}_share_email", use_container_width=True):
+                ok, msg = send_portfolio_via_email(portfolio)
+                if ok:
+                    st.success(f"✅ Portfolio shared! {msg}")
+                else:
+                    st.error(f"❌ {msg}")
+        with col_sh2:
+            if portfolio and st.button("💾 Download JSON", key=f"{suffix}_share_json", use_container_width=True):
+                json_path = export_portfolio_to_json(portfolio)
+                if json_path:
+                    with open(json_path, "rb") as f:
+                        st.download_button(
+                            "📥 Click to Download Portfolio JSON",
+                            f,
+                            file_name="portfolio_share.json",
+                            mime="application/json",
+                            key=f"{suffix}_dl_json"
+                        )
+                else:
+                    st.error("Failed to export portfolio")
+        with col_sh3:
+            uploaded_file = st.file_uploader(
+                "📥 Import Portfolio JSON", 
+                type=["json"],
+                key=f"{suffix}_import_json"
+            )
+            if uploaded_file is not None:
+                import json as _json_module
+                try:
+                    imported_data = _json_module.load(uploaded_file)
+                    imported_holdings = import_portfolio_from_json(uploaded_file.name)
+                    if imported_holdings is None and isinstance(imported_data, list):
+                        imported_holdings = imported_data
+                    
+                    if imported_holdings and len(imported_holdings) > 0:
+                        merged = merge_portfolios(portfolio, imported_holdings)
+                        save_portfolio(merged)
+                        st.session_state["portfolio"] = merged
+                        st.success(f"✅ Imported {len(imported_holdings)} holdings! Portfolio now has {len(merged)} stocks.")
+                        st.rerun()
+                    else:
+                        st.error("Invalid portfolio file format")
+                except Exception as e:
+                    st.error(f"Error importing: {e}")
+    
     st.markdown("---")
     
     # ---- Control Buttons Row ----
@@ -334,7 +384,8 @@ def render_portfolio_page(suffix="port"):
             st.success("✅ Sound + Desktop notification test sent!")
     with col_r4:
         if portfolio and st.button("📥 Download Portfolio Excel", use_container_width=True, key=f"{suffix}_port_dl"):
-            excel_path = "portfolio_report.xlsx"
+            os.makedirs("reports", exist_ok=True)
+            excel_path = os.path.join("reports", "portfolio_report.xlsx")
             ok = export_portfolio_to_excel(portfolio, excel_path)
             if ok:
                 with open(excel_path, "rb") as f:
@@ -608,12 +659,18 @@ else:
                 lambda r: f"{'⭐'*int(r['Profit CAGR Stars'])} {r['Profit CAGR Star Bar'].split()[-1]}"
                 if r.get('Profit CAGR Stars', 0) > 0 else "-", axis=1)
             df_display["Star Badge"] = df_display["Star Badge"]
+            # Show Turn Around badge
+            df_display["🔄 Turn Around"] = df_display["Turn Around"].map(
+                {True: "🔄 TA Story", False: ""})
             display_cols = [
-                "Ticker", "Category", "Price", "Total Score",
+                "Ticker", "Category", "Price", "200 SMA", "200 SMA Dist %",
+                "Total Score", "Stars (Total)",
                 "Stars (Sales)", "Stars (Profit)", "Star Badge",
                 "Sales CAGR 3Y", "Sales CAGR 5Y",
                 "Profit CAGR 3Y", "Profit CAGR 5Y",
-                "200 SMA", "200 SMA Dist %"
+                "Sales+Profit CAGR Total",
+                "🔄 Turn Around",
+                "CAGR Accelerating"
             ]
             st.dataframe(
                 df_display[display_cols],
@@ -842,12 +899,14 @@ else:
             st.write("#### Manual Newsletter Trigger")
             if st.button("Generate Reports & Dispatch Newsletter"):
                 with st.spinner("Compiling PDF and Excel dossier files..."):
-                    pdf_path = "Bharat_AI_Gill_Momentum_Report.pdf"
-                    excel_path = "Bharat_AI_Gill_Momentum_Data.xlsx"
+                    pdf_name = "Bharat_AI_Gill_Momentum_Report.pdf"
+                    excel_name = "Bharat_AI_Gill_Momentum_Data.xlsx"
+                    pdf_path = os.path.join("reports", pdf_name)
+                    excel_path = os.path.join("reports", excel_name)
                     
                     # Generate reports
-                    pdf_ok = generate_pdf_report(df, pdf_path)
-                    excel_ok = generate_excel_report(df, latest_highs, continuous, red_alerts, excel_path)
+                    pdf_ok = generate_pdf_report(df, pdf_name)
+                    excel_ok = generate_excel_report(df, latest_highs, continuous, red_alerts, excel_name)
                     
                     if pdf_ok and excel_ok:
                         st.success("Reports generated successfully!")
@@ -938,10 +997,11 @@ else:
                 
             # Display table — full visibility with 24-Star CAGR System
             display_cols = [
-                "Ticker", "Category", "Price", "Total Score", "Star Badge",
+                "Ticker", "Category", "Price", "200 SMA", "200 SMA Dist %",
+                "Total Score", "Stars (Total)",
                 "Sales CAGR 3Y", "Sales CAGR 5Y",
                 "Profit CAGR 3Y", "Profit CAGR 5Y",
-                "200 SMA", "200 SMA Dist %"
+                "Sales+Profit CAGR Total"
             ]
             display_df = df.copy() if not df.empty else pd.DataFrame(columns=display_cols)
             if not display_df.empty:
@@ -1172,11 +1232,13 @@ else:
             st.write("#### Manual Newsletter Trigger")
             if st.button("Generate Value Reports & Dispatch Newsletter", key="p2_mail_trigger"):
                 with st.spinner("Compiling PDF and Excel dossier files..."):
-                    pdf_path = "Bharat_AI_Gill_Value_Report.pdf"
-                    excel_path = "Bharat_AI_Gill_Value_Data.xlsx"
+                    pdf_name = "Bharat_AI_Gill_Value_Report.pdf"
+                    excel_name = "Bharat_AI_Gill_Value_Data.xlsx"
+                    pdf_path = os.path.join("reports", pdf_name)
+                    excel_path = os.path.join("reports", excel_name)
                     
-                    pdf_ok = generate_pdf_report_v2(df, pdf_path)
-                    excel_ok = generate_excel_report_v2(df, continuous, red_alerts, excel_path)
+                    pdf_ok = generate_pdf_report_v2(df, pdf_name)
+                    excel_ok = generate_excel_report_v2(df, continuous, red_alerts, excel_name)
                     
                     if pdf_ok and excel_ok:
                         st.success("Value Reports generated successfully!")

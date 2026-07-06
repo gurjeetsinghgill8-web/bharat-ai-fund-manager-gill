@@ -15,6 +15,7 @@ api_key.txt
 # Generated Reports (PDF and Excel outputs)
 *.pdf
 *.xlsx
+reports/
 
 # OS-specific files
 .DS_Store

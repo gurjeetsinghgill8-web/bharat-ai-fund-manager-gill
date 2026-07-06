@@ -89,6 +89,51 @@ def compute_cagr_stars(sales_cagr_all, sales_cagr_3y, sales_cagr_5y,
     }
 
 
+def _detect_turnaround(sales_cagr_all, sales_cagr_3y, sales_cagr_5y,
+                        profit_cagr_all, profit_cagr_3y, profit_cagr_5y):
+    """
+    Detect "Turn Around" situation:
+    - Overall CAGR > BOTH 3Y and 5Y CAGRs AND Overall CAGR > 10
+    - This means recent years were weak but older good data pulls overall up
+    Returns (is_turnaround: bool, description: str)
+    """
+    reasons = []
+    # Sales turnaround check
+    sales_turn = False
+    if (sales_cagr_all is not None and sales_cagr_3y is not None and sales_cagr_5y is not None
+            and sales_cagr_all > 10.0
+            and sales_cagr_all > sales_cagr_3y and sales_cagr_all > sales_cagr_5y):
+        sales_turn = True
+        reasons.append(f"Sales TA({sales_cagr_all:.1f}% > 3Y:{sales_cagr_3y:.1f}% & 5Y:{sales_cagr_5y:.1f}%)")
+    
+    # Profit turnaround check
+    profit_turn = False
+    if (profit_cagr_all is not None and profit_cagr_3y is not None and profit_cagr_5y is not None
+            and profit_cagr_all > 10.0
+            and profit_cagr_all > profit_cagr_3y and profit_cagr_all > profit_cagr_5y):
+        profit_turn = True
+        reasons.append(f"Profit TA({profit_cagr_all:.1f}% > 3Y:{profit_cagr_3y:.1f}% & 5Y:{profit_cagr_5y:.1f}%)")
+    
+    is_turnaround = sales_turn or profit_turn
+    desc = "; ".join(reasons) if reasons else ""
+    return is_turnaround, desc
+
+
+def _compute_turnaround_bonus_stars(turnaround_data, star_data):
+    """
+    If a stock is a Turn Around AND overall CAGR > 15, add +1 bonus star
+    to the grand total (capped at 24).
+    """
+    is_turnaround = turnaround_data[0]
+    if not is_turnaround:
+        return star_data["Total Star Rating"], star_data["Star Badge"]
+    
+    bonus = 1  # +1 star for turnaround story
+    new_total = min(star_data["Total Star Rating"] + bonus, 24)
+    new_badge = f"{'⭐' * new_total} ({new_total}/24) 🔄 TA" if new_total > 0 else "No Stars 🔄 TA"
+    return new_total, new_badge
+
+
 def score_stock(stock_data):
     """
     Applies the scoring rules to a single stock's data.
@@ -236,10 +281,25 @@ def score_stock(stock_data):
         profit_cagr_all, profit_cagr_3y, profit_cagr_5y
     )
 
+    # === TURN AROUND DETECTION ===
+    turnaround_data = _detect_turnaround(
+        sales_cagr_all, sales_cagr_3y, sales_cagr_5y,
+        profit_cagr_all, profit_cagr_3y, profit_cagr_5y
+    )
+    is_turnaround, turnaround_desc = turnaround_data
+
+    # Bonus star for turnaround stories
+    total_star_rating, star_badge = _compute_turnaround_bonus_stars(turnaround_data, star_data)
+
+    # Sales+Profit CAGR Total (quick sum metric)
+    sales_profit_cagr_total = (sales_cagr_all if sales_cagr_all else 0) + (profit_cagr_all if profit_cagr_all else 0)
+
     return {
         "Ticker": ticker,
         "Category": get_category(ticker),
         "Price": round(current_price, 2),
+        "200 SMA": round(sma_200, 2) if sma_200 else 0.0,
+        "200 SMA Dist %": round(dist_pct, 2) if sma_200 else 0.0,
         "ATH": round(ath, 2),
         "3Y High": round(three_year_high, 2),
         "PE": round(pe, 2),
@@ -267,8 +327,14 @@ def score_stock(stock_data):
         "Profit CAGR 5Y Star Bar": star_data["Profit CAGR 5Y Star Bar"],
         "Sales Star Total": star_data["Sales Star Total"],   # /12
         "Profit Star Total": star_data["Profit Star Total"], # /12
-        "Total Star Rating": star_data["Total Star Rating"], # /24
-        "Star Badge": star_data["Star Badge"],
+        "Total Star Rating": total_star_rating, # with bonus TA stars
+        "Star Badge": star_badge,  # with 🔄 TA badge
+        "Stars (Sales Total)": f"{star_data['Sales Star Total']}/12",
+        "Stars (Profit Total)": f"{star_data['Profit Star Total']}/12",
+        "Stars (Total)": f"{total_star_rating}/24",
+        "Sales+Profit CAGR Total": round(sales_profit_cagr_total, 2),
+        "Turn Around": is_turnaround,
+        "Turn Around Desc": turnaround_desc,
         # --- RED ALERT ---
         "Red Alert": is_red_alert,
         "Red Reasons": ", ".join(red_reasons) if red_reasons else "None",
@@ -287,8 +353,6 @@ def score_stock(stock_data):
         "Sales Growth Accelerating": sales_growth_accelerating,
         "Profit Growth Accelerating": profit_growth_accelerating,
         "CAGR Accelerating": cagr_accelerating,
-        "200 SMA": round(sma_200, 2) if sma_200 else 0.0,
-        "200 SMA Dist %": round(dist_pct, 2) if sma_200 else 0.0,
         "Is Above 200 SMA": is_above_200_sma
     }
 
@@ -503,10 +567,25 @@ def score_stock_v2(stock_data):
         profit_cagr_all, profit_cagr_3y, profit_cagr_5y
     )
 
+    # === TURN AROUND DETECTION ===
+    turnaround_data = _detect_turnaround(
+        sales_cagr_all, sales_cagr_3y, sales_cagr_5y,
+        profit_cagr_all, profit_cagr_3y, profit_cagr_5y
+    )
+    is_turnaround, turnaround_desc = turnaround_data
+
+    # Bonus star for turnaround stories
+    total_star_rating, star_badge = _compute_turnaround_bonus_stars(turnaround_data, star_data)
+
+    # Sales+Profit CAGR Total (quick sum metric)
+    sales_profit_cagr_total = (sales_cagr_all if sales_cagr_all else 0) + (profit_cagr_all if profit_cagr_all else 0)
+
     return {
         "Ticker": ticker,
         "Category": get_category(ticker),
         "Price": round(current_price, 2),
+        "200 SMA": round(sma_200, 2) if sma_200 else 0.0,
+        "200 SMA Dist %": round(dist_pct, 2) if sma_200 else 0.0,
         "ATH": round(ath, 2),
         "3Y High": round(three_year_high, 2),
         "PE": round(pe, 2),
@@ -536,14 +615,20 @@ def score_stock_v2(stock_data):
         "Profit CAGR 5Y Star Bar": star_data["Profit CAGR 5Y Star Bar"],
         "Sales Star Total": star_data["Sales Star Total"],   # /12
         "Profit Star Total": star_data["Profit Star Total"], # /12
-        "Total Star Rating": star_data["Total Star Rating"], # /24
-        "Star Badge": star_data["Star Badge"],
+        "Total Star Rating": total_star_rating, # with bonus TA stars
+        "Star Badge": star_badge,  # with 🔄 TA badge
+        "Stars (Sales Total)": f"{star_data['Sales Star Total']}/12",
+        "Stars (Profit Total)": f"{star_data['Profit Star Total']}/12",
+        "Stars (Total)": f"{total_star_rating}/24",
+        "Sales+Profit CAGR Total": round(sales_profit_cagr_total, 2),
+        "Turn Around": is_turnaround,
+        "Turn Around Desc": turnaround_desc,
         # --- CAGR ACCELERATION ---
         "Sales Growth Accelerating": sales_growth_accelerating,
         "Profit Growth Accelerating": profit_growth_accelerating,
         "CAGR Accelerating": cagr_accelerating,
         "Value Fit": value_fit,
-        "Star Rating": star_data["Total Star Rating"],
+        "Star Rating": total_star_rating,
         "Total Score": total_score,
         "Red Alert": is_red_alert,
         "Red Reasons": ", ".join(red_reasons) if red_reasons else "None",
@@ -553,8 +638,6 @@ def score_stock_v2(stock_data):
         "Promoter %": round(stock_data["promoter_share"], 1),
         "Institution %": round(stock_data["inst_share"], 1),
         "Public %": round(stock_data["public_share"], 1),
-        "200 SMA": round(sma_200, 2) if sma_200 else 0.0,
-        "200 SMA Dist %": round(dist_pct, 2) if sma_200 else 0.0,
         "Is Above 200 SMA": is_above_200_sma
     }
 

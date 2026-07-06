@@ -5,12 +5,23 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 
+# Ensure reports directory exists
+REPORTS_DIR = "reports"
+os.makedirs(REPORTS_DIR, exist_ok=True)
+
+
+def _resolve_path(filename):
+    """Resolve filename to reports/ directory."""
+    return os.path.join(REPORTS_DIR, filename)
+
+
 def generate_excel_report(df, latest_highs, continuous, red_alerts, filename):
     """
     Saves the dataframes to a beautifully formatted multi-tab Excel file.
     """
     try:
-        with pd.ExcelWriter(filename, engine='xlsxwriter') as writer:
+        filepath = _resolve_path(filename)
+        with pd.ExcelWriter(filepath, engine='xlsxwriter') as writer:
             # Write sheets
             df.to_excel(writer, sheet_name='All Ranked Stocks', index=False)
             latest_highs.to_excel(writer, sheet_name='Latest Breakouts', index=False)
@@ -102,8 +113,9 @@ def generate_pdf_report(ranked_df, filename):
     Generates a beautiful PDF report containing the ranked stock leaderboard and detailed narratives of top picks.
     """
     try:
+        filepath = _resolve_path(filename)
         doc = SimpleDocTemplate(
-            filename,
+            filepath,
             pagesize=letter,
             rightMargin=45,
             leftMargin=45,
@@ -293,7 +305,8 @@ def generate_excel_report_v2(df, continuous, red_alerts, filename):
     Saves the Page 2 dataframes to a beautifully formatted multi-tab Excel file.
     """
     try:
-        with pd.ExcelWriter(filename, engine='xlsxwriter') as writer:
+        filepath = _resolve_path(filename)
+        with pd.ExcelWriter(filepath, engine='xlsxwriter') as writer:
             df.to_excel(writer, sheet_name='All Value Stocks', index=False)
             continuous.to_excel(writer, sheet_name='Sustained Momentum', index=False)
             red_alerts.to_excel(writer, sheet_name='Red Alert Blacklist', index=False)
@@ -333,8 +346,9 @@ def generate_pdf_report_v2(ranked_df, filename):
     Generates a PDF report containing the Page 2 Value & SMA leaderboard and detailed narratives of top picks.
     """
     try:
+        filepath = _resolve_path(filename)
         doc = SimpleDocTemplate(
-            filename,
+            filepath,
             pagesize=letter,
             rightMargin=45,
             leftMargin=45,

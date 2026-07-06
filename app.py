@@ -230,24 +230,42 @@ else:
 st.sidebar.markdown("---")
 st.sidebar.write("⚡ **Control Center**")
 
-# Scan mode toggle
+# Universe size presets
+UNIVERSE_PRESETS = {"⚡ Core 127": 0, "🌐 Top 50": 50, "🌐 Top 100": 100, 
+                    "🌐 Top 200": 200, "🌐 Top 500": 500, "🌐 Top 1000": 1000,
+                    "🌐 Top 2000": 2000, "🌐 Top 3000+": 3000}
+
+# Scan mode toggle with presets
+scan_mode_labels = list(UNIVERSE_PRESETS.keys())
+default_idx = 0
+if "scan_mode" in st.session_state and st.session_state["scan_mode"] in UNIVERSE_PRESETS:
+    default_idx = scan_mode_labels.index(st.session_state["scan_mode"])
+
 scan_mode = st.sidebar.radio(
-    "Scan Mode",
-    ["⚡ Core 127", "🌐 Full Universe 2000+"],
-    index=0 if st.session_state["scan_mode"] == "⚡ Core 127" else 1,
-    help="Core 127: Quick scan of hand-picked stocks. Full Universe: 2000+ NSE stocks (takes ~30s)."
+    "Universe Size",
+    scan_mode_labels,
+    index=default_idx,
+    help="Select how many stocks to scan. Larger = more comprehensive but slower."
 )
 
+# Get the limit value for this preset
+selected_limit = UNIVERSE_PRESETS[scan_mode]
+
 # Update tickers if mode changed
-if scan_mode != st.session_state["scan_mode"]:
+if scan_mode != st.session_state.get("scan_mode", ""):
     st.session_state["scan_mode"] = scan_mode
-    use_full = "2000+" in scan_mode
-    st.session_state["all_tickers"] = get_all_tickers(use_full=use_full)
-    st.sidebar.info(f"Switched to {'2000+ Full Universe' if use_full else '127 Core Watchlist'} mode!")
+    use_full = selected_limit > 0
+    limit = selected_limit if selected_limit > 0 else None
+    st.session_state["all_tickers"] = get_all_tickers(use_full=use_full, limit=limit)
+    total_count = len(st.session_state["all_tickers"])
+    st.sidebar.info(f"Switched to {scan_mode} mode — scanning {total_count} stocks!")
 
 all_tickers = st.session_state["all_tickers"]
 
-if st.sidebar.button("Run System Scan (Pull Data)"):
+# Show current universe count
+st.sidebar.caption(f"📊 Current universe: {len(all_tickers)} stocks")
+
+if st.sidebar.button("🚀 Run System Scan"):
     progress_bar = st.sidebar.progress(0.0)
     status_text = st.sidebar.empty()
 
@@ -256,15 +274,20 @@ if st.sidebar.button("Run System Scan (Pull Data)"):
         progress_bar.progress(pct)
         status_text.write(f"Scrubbing: `{ticker}` ({idx+1}/{total})")
 
-    use_full = "2000+" in scan_mode
+    use_full = selected_limit > 0
+    total_stocks = len(all_tickers)
+    
     if use_full:
-        st.sidebar.info("🌐 Full universe scan in progress (parallel engine active)...")
-        results = batch_update_stocks_parallel(all_tickers, force_refresh=True, max_workers=10, progress_callback=update_prog)
+        if total_stocks > 200:
+            st.sidebar.info(f"🌐 Scanning {total_stocks} stocks in parallel (10 workers)...")
+            results = batch_update_stocks_parallel(all_tickers, force_refresh=True, max_workers=10, progress_callback=update_prog)
+        else:
+            results = batch_update_stocks(all_tickers, force_refresh=True, progress_callback=update_prog)
     else:
         results = batch_update_stocks(all_tickers, force_refresh=True, progress_callback=update_prog)
     st.session_state["stock_cache"] = results
     st.session_state["last_update"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
-    st.sidebar.success("Scan Complete!")
+    st.sidebar.success(f"✅ Scan Complete! {len(results)} stocks cached.")
 
 # Check cache status on load
 if not st.session_state["stock_cache"]:
@@ -279,6 +302,28 @@ if not st.session_state["stock_cache"]:
 last_up = st.session_state["last_update"] or "Never"
 st.sidebar.caption(f"Last data sync: {last_up}")
 st.sidebar.caption(f"Universe: {len(all_tickers)} stocks")
+
+# Cache info & cleaner
+st.sidebar.markdown("---")
+st.sidebar.caption("💾 **Cache Info**")
+_cache_count = len(os.listdir("data_cache")) if os.path.exists("data_cache") else 0
+st.sidebar.caption(f"Stock cache: {_cache_count} files (expires in 7d)")
+if st.sidebar.button("🧹 Clean Old Cache", help="Delete cache older than 7 days"):
+    cleaned = 0
+    if os.path.exists("data_cache"):
+        now_ts = __import__('time').time()
+        for fname in os.listdir("data_cache"):
+            fpath = os.path.join("data_cache", fname)
+            if os.path.isfile(fpath):
+                age_days = (now_ts - os.path.getmtime(fpath)) / 86400
+                if age_days > 7:
+                    os.remove(fpath)
+                    cleaned += 1
+    if cleaned > 0:
+        st.sidebar.success(f"🧹 Cleaned {cleaned} old cache files!")
+        st.session_state["stock_cache"] = {}  # Force refresh
+    else:
+        st.sidebar.info("No old cache files to clean.")
 
 
 # ============================================================
@@ -324,12 +369,17 @@ def render_portfolio_page(suffix="port"):
     with st.expander("📤 Share Portfolio / 📥 Import Portfolio", expanded=False):
         col_sh1, col_sh2, col_sh3 = st.columns([2, 2, 2])
         with col_sh1:
-            if portfolio and st.button("📤 Share via Email", key=f"{suffix}_share_email", use_container_width=True):
-                ok, msg = send_portfolio_via_email(portfolio)
-                if ok:
-                    st.success(f"✅ Portfolio shared! {msg}")
+            st.markdown("**Send to Email:**")
+            share_email = st.text_input("Enter recipient email", placeholder="friend@email.com", key=f"{suffix}_share_email_input")
+            if portfolio and st.button("📤 Send Portfolio", key=f"{suffix}_share_email_btn", use_container_width=True):
+                if share_email and "@" in share_email:
+                    ok, msg = send_portfolio_via_email(portfolio, recipient_email=share_email)
+                    if ok:
+                        st.success(f"✅ Portfolio sent to {share_email}!")
+                    else:
+                        st.error(f"❌ {msg}")
                 else:
-                    st.error(f"❌ {msg}")
+                    st.warning("Please enter a valid email address")
         with col_sh2:
             if portfolio and st.button("💾 Download JSON", key=f"{suffix}_share_json", use_container_width=True):
                 json_path = export_portfolio_to_json(portfolio)
@@ -529,7 +579,7 @@ def render_portfolio_page(suffix="port"):
 st.sidebar.markdown("---")
 engine_page = st.sidebar.radio("Navigation", ["⚡ Page 1: Momentum & Breakout", "🔍 Page 2: Value & 200 SMA", "📊 Portfolio Dashboard"])
 
-use_full = "2000+" in scan_mode
+use_full = selected_limit > 0
 st.sidebar.markdown("---")
 st.sidebar.write("⚙️ **Global Filter Options**")
 from symbols import get_all_categories

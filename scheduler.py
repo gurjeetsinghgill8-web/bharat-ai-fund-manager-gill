@@ -60,12 +60,15 @@ def execute_scan_and_report():
         
     date_str = datetime.datetime.now().strftime("%Y-%m-%d")
     
-    pdf_path = f"Bharat_AI_Gill_Momentum_Report_{date_str}.pdf"
-    excel_path = f"Bharat_AI_Gill_Momentum_Data_{date_str}.xlsx"
+    pdf_name = f"Bharat_AI_Gill_Momentum_Report_{date_str}.pdf"
+    excel_name = f"Bharat_AI_Gill_Momentum_Data_{date_str}.xlsx"
+    pdf_path = os.path.join("reports", pdf_name)
+    excel_path = os.path.join("reports", excel_name)
+    os.makedirs("reports", exist_ok=True)
     
     print("Generating report files...")
-    pdf_ok = generate_pdf_report(df, pdf_path)
-    excel_ok = generate_excel_report(df, latest_highs, continuous, red_alerts, excel_path)
+    pdf_ok = generate_pdf_report(df, pdf_name)
+    excel_ok = generate_excel_report(df, latest_highs, continuous, red_alerts, excel_name)
     
     if pdf_ok and excel_ok:
         print(f"Reports generated successfully:\n- {pdf_path}\n- {excel_path}")
@@ -86,7 +89,27 @@ def main():
     parser.add_argument("--now", action="store_true", help="Run scan and portfolio sync immediately and exit")
     parser.add_argument("--interval", type=int, default=7, help="Loop interval in days (default: 7)")
     parser.add_argument("--sync-portfolio", action="store_true", help="Only sync portfolio prices and alerts (no full scan)")
+    parser.add_argument("--twice-daily", action="store_true", help="Run in twice-daily mode (morning 9AM + evening 5PM)")
+    parser.add_argument("--auto-clean", type=int, default=0, help="Auto-delete cache older than N days before scan (default: 0 = off)")
     args = parser.parse_args()
+    
+    # Auto-clean old cache if requested
+    if args.auto_clean > 0:
+        import shutil
+        cache_dirs = ["data_cache", "screener_cache", "reports"]
+        for d in cache_dirs:
+            if os.path.exists(d):
+                now_ts = time.time()
+                deleted = 0
+                for fname in os.listdir(d):
+                    fpath = os.path.join(d, fname)
+                    if os.path.isfile(fpath):
+                        age_days = (now_ts - os.path.getmtime(fpath)) / 86400
+                        if age_days > args.auto_clean:
+                            os.remove(fpath)
+                            deleted += 1
+                if deleted > 0:
+                    print(f"🧹 Cleaned {deleted} old files from {d}/ (>{args.auto_clean}d)")
     
     if args.sync_portfolio:
         execute_portfolio_sync()
@@ -97,7 +120,31 @@ def main():
         # Also sync portfolio
         execute_portfolio_sync()
         sys.exit(0)
-        
+    
+    if args.twice_daily:
+        print("=" * 60)
+        print("BHARAT AI SCHEDULER — TWICE DAILY MODE")
+        print(f"Started at: {datetime.datetime.now()}")
+        print("Schedule: Morning (~09:00) + Evening (~17:00)")
+        print("=" * 60)
+        while True:
+            now = datetime.datetime.now()
+            # Morning run: 9:00-9:30 AM
+            # Evening run: 17:00-17:30 PM
+            hour = now.hour
+            minute = now.minute
+            
+            if (hour == 9 and minute < 30) or (hour == 17 and minute < 30):
+                print(f"\n[{now}] Scheduled run triggered...")
+                execute_scan_and_report()
+                execute_portfolio_sync()
+                # Sleep extra to avoid re-running in same window
+                time.sleep(3600)  # 1 hour
+            else:
+                # Sleep 30 minutes before checking again
+                print(f"[{datetime.datetime.now()}] Waiting... next check in 30 min", end="\r")
+                time.sleep(1800)
+    
     print(f"Bharat AI Scheduler service started. Scanning every {args.interval} days...")
     print("Portfolio will be synced on each run.")
     while True:

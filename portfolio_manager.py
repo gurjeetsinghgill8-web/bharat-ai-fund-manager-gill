@@ -529,6 +529,8 @@ def send_portfolio_via_email(holdings, recipient_email=None):
     """
     Sends the portfolio as a JSON attachment via email.
     Uses existing SMTP config.
+    If recipient_email is provided, sends to that address.
+    Otherwise falls back to EMAIL_RECIPIENTS env var.
     Returns (success: bool, message: str)
     """
     try:
@@ -545,12 +547,17 @@ def send_portfolio_via_email(holdings, recipient_email=None):
         smtp_pass = os.getenv("SMTP_PASSWORD", "")
         recipients_str = os.getenv("EMAIL_RECIPIENTS", "")
         
-        if not smtp_user or not smtp_pass or not recipients_str:
-            return False, "SMTP not configured"
+        if not smtp_user or not smtp_pass:
+            return False, "SMTP not configured (SMTP_USER / SMTP_PASSWORD missing)"
         
-        # Export portfolio to JSON
-        json_path = export_portfolio_to_json(holdings)
-        if not json_path:
+        # Determine recipients
+        if recipient_email:
+            # Single custom recipient (user typed their email)
+            recipients = [recipient_email.strip()]
+        elif recipients_str:
+            recipients = [r.strip() for r in recipients_str.split(",") if r.strip()]
+        else:
+            return False, "No recipient email provided and EMAIL_RECIPIENTS not set"
             return False, "Failed to export portfolio"
         
         recipients = [r.strip() for r in recipients_str.split(",") if r.strip()]

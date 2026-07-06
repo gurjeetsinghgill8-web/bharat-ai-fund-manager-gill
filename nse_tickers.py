@@ -57,9 +57,11 @@ FALLBACK_TICKERS = [
 # Fetch live from NSE archives
 # ---------------------------------------------------------------------------
 
-def fetch_live_nse_tickers():
+def fetch_live_nse_tickers(include_all_series=False):
     """
-    Downloads the NSE equity master CSV and extracts all EQ-series symbols.
+    Downloads the NSE equity master CSV and extracts ticker symbols.
+    If include_all_series=False (default): only EQ-series (actively traded) — ~2000 stocks.
+    If include_all_series=True: includes all series (EQ, BE, BZ, etc.) — ~3000+ stocks.
     Returns a list of ticker symbols WITHOUT .NS suffix.
     Returns empty list on failure.
     """
@@ -80,10 +82,15 @@ def fetch_live_nse_tickers():
         tickers = []
         for line in lines[1:]:  # Skip header
             parts = line.split(",")
-            if len(parts) >= 3 and parts[2] == "EQ":  # Series EQ = actively traded
-                tickers.append(parts[0].strip())
+            if len(parts) >= 3:
+                series = parts[2].strip()
+                if include_all_series:
+                    # Include all series: EQ, BE, BZ, BT, etc.
+                    tickers.append(parts[0].strip())
+                elif series == "EQ":  # Series EQ = actively traded
+                    tickers.append(parts[0].strip())
 
-        print(f"NSE live fetch: {len(tickers)} EQ symbols found")
+        print(f"NSE live fetch: {len(tickers)} symbols (include_all={include_all_series})")
         return tickers
 
     except requests.exceptions.ConnectionError:
@@ -134,9 +141,9 @@ def save_cached_tickers(tickers):
 # Public API
 # ---------------------------------------------------------------------------
 
-def get_nse_tickers(force_refresh=False):
+def get_nse_tickers(force_refresh=False, include_all_series=False):
     """
-    Main function: returns the full list of NSE EQ tickers (WITHOUT .NS suffix).
+    Main function: returns the full list of NSE tickers (WITHOUT .NS suffix).
     
     Priority:
     1. Check local cache (if fresh)
@@ -145,6 +152,7 @@ def get_nse_tickers(force_refresh=False):
     
     Args:
         force_refresh: If True, skip cache and fetch live
+        include_all_series: If True, fetch all series (~3000+ stocks instead of ~2000 EQ-only)
     
     Returns:
         list of ticker symbols (e.g., ["RELIANCE", "TCS", ...])
@@ -157,7 +165,7 @@ def get_nse_tickers(force_refresh=False):
             return cached
 
     # 2. Fetch live
-    live = fetch_live_nse_tickers()
+    live = fetch_live_nse_tickers(include_all_series=include_all_series)
     if live:
         save_cached_tickers(live)
         return live
@@ -167,11 +175,11 @@ def get_nse_tickers(force_refresh=False):
     return list(FALLBACK_TICKERS)
 
 
-def get_nse_tickers_with_suffix(force_refresh=False):
+def get_nse_tickers_with_suffix(force_refresh=False, include_all_series=False):
     """
     Same as get_nse_tickers() but appends .NS suffix for Yahoo Finance.
     """
-    tickers = get_nse_tickers(force_refresh=force_refresh)
+    tickers = get_nse_tickers(force_refresh=force_refresh, include_all_series=include_all_series)
     return [f"{t}.NS" for t in tickers]
 
 

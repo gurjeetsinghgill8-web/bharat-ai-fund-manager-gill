@@ -61,25 +61,39 @@ for cap, tickers in CORE_STOCKS.items():
 # Public API
 # ---------------------------------------------------------------------------
 
-def get_all_tickers(use_full=False):
+def get_all_tickers(use_full=False, limit=None):
     """
     Returns a deduplicated list of ticker symbols with .NS suffix.
     
     Args:
         use_full: If True, returns ~2000+ NSE symbols (fetched from NSE archives).
                   If False, returns the 127 core watchlist (default).
+        limit: Optional int to limit total stocks returned (e.g., 50, 100, 500, 1000, 2000).
+               Applied AFTER combining core + NSE sets.
     
     Returns:
         list of ticker strings (e.g., ["RELIANCE.NS", "TCS.NS", ...])
     """
     if use_full:
         # Get full NSE list (from cache/live/fallback)
-        full = get_nse_tickers_with_suffix()
+        # For limits > 2000, include all series to get ~3000+ stocks
+        include_all = limit is not None and limit > 2000
+        full = get_nse_tickers_with_suffix(include_all_series=include_all)
         # Ensure core stocks are always included
         core_set = set(get_all_tickers(use_full=False))
         full_set = set(full)
         combined = list(core_set | full_set)
         print(f"Full universe: {len(combined)} stocks (core={len(core_set)}, nse={len(full_set)})")
+        
+        # Apply limit if specified
+        if limit is not None and limit > 0:
+            # Keep core stocks first, then fill with NSE stocks up to limit
+            core_list = list(core_set)
+            nse_only = [t for t in combined if t not in core_set]
+            limited = core_list + nse_only[:max(0, limit - len(core_list))]
+            print(f"Limited universe: {len(limited)} stocks (limit={limit})")
+            return limited
+        
         return combined
     
     # Core watchlist

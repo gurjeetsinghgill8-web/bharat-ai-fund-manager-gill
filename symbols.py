@@ -61,18 +61,19 @@ for cap, tickers in CORE_STOCKS.items():
 # Public API
 # ---------------------------------------------------------------------------
 
-def get_all_tickers(use_full=False, limit=None):
+def get_all_tickers(use_full=False, limit=None, include_bse=False):
     """
-    Returns a deduplicated list of ticker symbols with .NS suffix.
+    Returns a deduplicated list of ticker symbols with .NS suffix (and optionally .BO).
     
     Args:
         use_full: If True, returns ~2000+ NSE symbols (fetched from NSE archives).
                   If False, returns the 127 core watchlist (default).
         limit: Optional int to limit total stocks returned (e.g., 50, 100, 500, 1000, 2000).
                Applied AFTER combining core + NSE sets.
+        include_bse: If True, also returns BSE (.BO) tickers alongside NSE ones.
     
     Returns:
-        list of ticker strings (e.g., ["RELIANCE.NS", "TCS.NS", ...])
+        list of ticker strings (e.g., ["RELIANCE.NS", "TCS.NS", ..., "RELIANCE.BO", ...])
     """
     if use_full:
         # Get full NSE list (from cache/live/fallback)
@@ -83,7 +84,14 @@ def get_all_tickers(use_full=False, limit=None):
         core_set = set(get_all_tickers(use_full=False))
         full_set = set(full)
         combined = list(core_set | full_set)
-        print(f"Full universe: {len(combined)} stocks (core={len(core_set)}, nse={len(full_set)})")
+        
+        # Add BSE tickers if requested
+        if include_bse:
+            bse_set = set(get_bse_tickers())
+            combined = list(set(combined) | bse_set)
+            print(f"Full universe + BSE: {len(combined)} stocks")
+        else:
+            print(f"Full universe: {len(combined)} stocks (core={len(core_set)}, nse={len(full_set)})")
         
         # Apply limit if specified
         if limit is not None and limit > 0:
@@ -133,6 +141,20 @@ def get_core_stocks_list():
     Returns the flat list of 127 core tickers (for reference).
     """
     return list(set(t for cap_list in CORE_STOCKS.values() for t in cap_list))
+
+
+# ---------------------------------------------------------------------------
+# BSE Ticker Support
+# ---------------------------------------------------------------------------
+def get_bse_tickers():
+    """
+    Returns BSE (.BO) ticker symbols derived from NSE EQ list.
+    Most stocks listed on NSE are also listed on BSE with the same symbol.
+    Returns list like ["RELIANCE.BO", "TCS.BO", ...]
+    """
+    from nse_tickers import get_nse_tickers
+    nse_tickers = get_nse_tickers()  # Without .NS suffix
+    return [f"{t}.BO" for t in nse_tickers]
 
 
 # ---------------------------------------------------------------------------

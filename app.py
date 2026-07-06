@@ -9,6 +9,12 @@ from dotenv import load_dotenv
 from symbols import get_all_tickers
 from data_fetcher import get_stock_data, batch_update_stocks, batch_update_stocks_parallel
 from scoring_engine import run_scoring, score_stock, run_scoring_v2, score_stock_v2
+from sector_industry import (
+    compute_nse_sectors, compute_bse_sectors, compute_all_sectors,
+    compute_nse_industries, compute_bse_industries, compute_all_industries,
+    get_sector_stocks, get_industry_stocks, get_sector_summary_stats,
+    compute_exchange_summary
+)
 from report_generator import generate_excel_report, generate_pdf_report, generate_excel_report_v2, generate_pdf_report_v2
 from email_dispatcher import send_momentum_newsletter
 from llm_harness import has_active_api_key, generate_ai_narrative, generate_ai_narrative_v2, discuss_with_jarvis
@@ -202,7 +208,7 @@ if "all_tickers" not in st.session_state:
 # ------------------ SIDEBAR ------------------
 st.sidebar.image("https://img.icons8.com/nolan/96/artificial-intelligence.png", width=90)
 st.sidebar.title("BHARAT AI GILL")
-st.sidebar.subheader("Jarvis Option/Fund Core v1.02")
+st.sidebar.subheader("Jarvis Option/Fund Core v1.03")
 
 # Show Turn Around info in sidebar
 st.sidebar.markdown("🔄 **Turn Around (TA):** Overall CAGR > Both 3Y & 5Y CAGR → Bonus ⭐ + 🔄 Badge", unsafe_allow_html=True)
@@ -577,7 +583,7 @@ def render_portfolio_page(suffix="port"):
 
 # Filter selections
 st.sidebar.markdown("---")
-engine_page = st.sidebar.radio("Navigation", ["⚡ Page 1: Momentum & Breakout", "🔍 Page 2: Value & 200 SMA", "📊 Portfolio Dashboard"])
+engine_page = st.sidebar.radio("Navigation", ["⚡ Page 1: Momentum & Breakout", "🔍 Page 2: Value & 200 SMA", "📊 Portfolio Dashboard", "🏭 Page 3: Sectors & Industries"])
 
 use_full = selected_limit > 0
 st.sidebar.markdown("---")
@@ -638,7 +644,7 @@ else:
     if engine_page == "⚡ Page 1: Momentum & Breakout":
         # Title and header
         st.title("⚡ BHARAT AI FUND MANAGER GILL")
-        st.markdown("### Jarvis Autonomous Option/Equity Momentum Screener (v1.02 Upgrade — SMA Front + Turn Around Stars)")
+        st.markdown("### Jarvis Autonomous Option/Equity Momentum Screener (v1.03 Upgrade — SMA Front + Turn Around Stars)")
         
         # 1. Metric Display Cards (Page 1)
         star_stocks = len(df[df["Total Star Rating"] >= 12]) if not df.empty else 0
@@ -718,7 +724,7 @@ else:
             df_display["🔄 Turn Around"] = df_display["Turn Around"].map(
                 {True: "🔄 TA Story", False: ""})
             display_cols = [
-                "Ticker", "Category", "Price", "200 SMA", "200 SMA Dist %",
+                "Ticker", "Exchange", "Sector", "Industry", "Category", "Price", "200 SMA", "200 SMA Dist %",
                 "Total Score", "Stars (Total)",
                 "Stars (Sales)", "Stars (Profit)", "Star Badge",
                 "Sales CAGR", "Sales CAGR 3Y", "Sales CAGR 5Y",
@@ -978,10 +984,10 @@ else:
                     else:
                         st.error("Report generation failed. Check server logs.")
 
-    else:
+    elif engine_page == "🔍 Page 2: Value & 200 SMA":
         # Page 2 — Title and header
         st.title("🛡️ BHARAT AI VALUE & 200 SMA SCREENER")
-        st.markdown("### Jarvis Proximity & CAGR Value Engine (v1.02 Upgrade)")
+        st.markdown("### Jarvis Proximity & CAGR Value Engine (v1.03 Upgrade)")
         
         # 1. Metric Display Cards
         star_stocks = len(df[df["Total Star Rating"] >= 12]) if not df.empty else 0
@@ -1052,7 +1058,7 @@ else:
                 
             # Display table — full visibility with 24-Star CAGR System
             display_cols = [
-                "Ticker", "Category", "Price", "200 SMA", "200 SMA Dist %",
+                "Ticker", "Exchange", "Sector", "Industry", "Category", "Price", "200 SMA", "200 SMA Dist %",
                 "Total Score", "Stars (Total)",
                 "Sales CAGR", "Sales CAGR 3Y", "Sales CAGR 5Y",
                 "Profit CAGR", "Profit CAGR 3Y", "Profit CAGR 5Y",
@@ -1309,3 +1315,143 @@ else:
                             st.info("Tip: Double-check that your SMTP user and app passwords are set correctly in your `.env` file.")
                     else:
                         st.error("Report generation failed. Check server logs.")
+
+    else:
+        # ============================================================
+        # PAGE 3: SECTORS & INDUSTRIES DASHBOARD
+        # ============================================================
+        st.title("🏭 BHARAT AI SECTOR & INDUSTRY DASHBOARD")
+        st.markdown("### NSE & BSE Sector/Industry Performance Rankings — Side by Side")
+        
+        if df.empty:
+            st.warning("No stock data available. Run a scan first.")
+        else:
+            # ── Summary Stats ──
+            stats = get_sector_summary_stats(df)
+            exc_summary = compute_exchange_summary(df)
+            
+            col_s1, col_s2, col_s3, col_s4, col_s5 = st.columns(5)
+            with col_s1:
+                st.markdown(f"""<div class="metric-container"><div class="metric-value">{stats.get('nse_sectors', 0)}</div><div class="metric-label">NSE Sectors</div></div>""", unsafe_allow_html=True)
+            with col_s2:
+                st.markdown(f"""<div class="metric-container"><div class="metric-value">{stats.get('bse_sectors', 0)}</div><div class="metric-label">BSE Sectors</div></div>""", unsafe_allow_html=True)
+            with col_s3:
+                st.markdown(f"""<div class="metric-container"><div class="metric-value">{stats.get('total_industries', 0)}</div><div class="metric-label">Total Industries</div></div>""", unsafe_allow_html=True)
+            with col_s4:
+                top_sec = stats.get('top_sector', 'N/A')
+                top_sec_score = stats.get('top_sector_score', 0)
+                st.markdown(f"""<div class="metric-container"><div class="metric-value" style="color:#00CC00;">🏆 {top_sec}</div><div class="metric-label">Top Sector (Avg: {top_sec_score})</div></div>""", unsafe_allow_html=True)
+            with col_s5:
+                worst = stats.get('worst_sector', 'N/A')
+                worst_score = stats.get('worst_sector_score', 0)
+                st.markdown(f"""<div class="metric-container"><div class="metric-value" style="color:#CC0000;">⚠️ {worst}</div><div class="metric-label">Worst Sector (Avg: {worst_score})</div></div>""", unsafe_allow_html=True)
+            
+            st.markdown("<br/>", unsafe_allow_html=True)
+            
+            # ── Exchange Summary Table ──
+            if not exc_summary.empty:
+                st.subheader("📊 NSE vs BSE — Quick Comparison")
+                st.dataframe(exc_summary, use_container_width=True)
+                st.markdown("---")
+            
+            # ── Tabs ──
+            stab1, stab2, stab3, stab4, stab5 = st.tabs([
+                "🇮🇳 NSE Sectors",
+                "🇮🇳 BSE Sectors", 
+                "🏭 All Industries",
+                "🔍 Sector Detail",
+                "🔬 Industry Detail"
+            ])
+            
+            # ── TAB 1: NSE Sectors ──
+            with stab1:
+                st.subheader("NSE Sector Performance Ranking")
+                st.caption("Ranked by average quality score. Green = positive, Red = negative.")
+                nse_sectors = compute_nse_sectors(df)
+                if not nse_sectors.empty:
+                    def _color_perf(val):
+                        if isinstance(val, str):
+                            if "Strong" in val: return "color: #00CC00; font-weight: bold"
+                            if "Positive" in val: return "color: #008800;"
+                            if "Negative" in val: return "color: #CC8800;"
+                            if "Weak" in val: return "color: #CC0000; font-weight: bold"
+                        return ""
+                    styled_nse = nse_sectors.style.map(_color_perf, subset=["Performance"])
+                    st.dataframe(styled_nse, use_container_width=True, height=min(500, 35 * len(nse_sectors) + 40))
+                else:
+                    st.info("No NSE sector data available.")
+            
+            # ── TAB 2: BSE Sectors ──
+            with stab2:
+                st.subheader("BSE Sector Performance Ranking")
+                st.caption("BSE stocks (.BO tickers) grouped by sector. Fewer stocks than NSE.")
+                bse_sectors = compute_bse_sectors(df)
+                if not bse_sectors.empty:
+                    def _color_perf_bse(val):
+                        if isinstance(val, str):
+                            if "Strong" in val: return "color: #00CC00; font-weight: bold"
+                            if "Positive" in val: return "color: #008800;"
+                            if "Negative" in val: return "color: #CC8800;"
+                            if "Weak" in val: return "color: #CC0000; font-weight: bold"
+                        return ""
+                    styled_bse = bse_sectors.style.map(_color_perf_bse, subset=["Performance"])
+                    st.dataframe(styled_bse, use_container_width=True, height=min(500, 35 * len(bse_sectors) + 40))
+                else:
+                    st.info("No BSE sector data available. Add BSE stocks to your universe to see this.")
+                    st.info("💡 Tip: Use 'Top 3000+' universe mode to also scan BSE stocks (.BO).")
+            
+            # ── TAB 3: All Industries ──
+            with stab3:
+                st.subheader("Industry Performance Ranking (All Exchanges)")
+                st.caption("More granular than sectors — 80+ industries ranked by performance.")
+                all_ind = compute_all_industries(df)
+                if not all_ind.empty:
+                    st.dataframe(all_ind, use_container_width=True, height=min(600, 35 * len(all_ind) + 40))
+                else:
+                    st.info("No industry data available.")
+            
+            # ── TAB 4: Sector Detail ──
+            with stab4:
+                st.subheader("🔍 Sector Details — View All Stocks in a Sector")
+                all_sectors = sorted(df["Sector"].unique()) if "Sector" in df.columns else []
+                if all_sectors:
+                    col_sel1, col_sel2 = st.columns([2, 1])
+                    with col_sel1:
+                        sel_sector = st.selectbox("Select Sector", all_sectors, key="p3_sec_select")
+                    with col_sel2:
+                        sel_exch = st.selectbox("Exchange", ["All", "NSE", "BSE"], key="p3_sec_exch")
+                    
+                    exchange_filter = None if sel_exch == "All" else sel_exch
+                    sector_stocks = get_sector_stocks(df, sel_sector, exchange=exchange_filter)
+                    if not sector_stocks.empty:
+                        st.success(f"📊 {len(sector_stocks)} stocks in **{sel_sector}**" + (f" ({sel_exch})" if sel_exch != "All" else ""))
+                        detail_cols = ["Ticker", "Exchange", "Industry", "Category", "Price", "Total Score", "Stars (Total)", "Sales CAGR", "Profit CAGR", "200 SMA Dist %"]
+                        detail_cols = [c for c in detail_cols if c in sector_stocks.columns]
+                        st.dataframe(sector_stocks[detail_cols], use_container_width=True)
+                    else:
+                        st.warning(f"No stocks found for sector: {sel_sector}")
+                else:
+                    st.info("No sector data available. Run a scan first.")
+            
+            # ── TAB 5: Industry Detail ──
+            with stab5:
+                st.subheader("🔬 Industry Details — View All Stocks in an Industry")
+                all_industries = sorted(df["Industry"].unique()) if "Industry" in df.columns else []
+                if all_industries:
+                    col_ind1, col_ind2 = st.columns([2, 1])
+                    with col_ind1:
+                        sel_ind = st.selectbox("Select Industry", all_industries, key="p3_ind_select")
+                    with col_ind2:
+                        sel_ind_exch = st.selectbox("Exchange", ["All", "NSE", "BSE"], key="p3_ind_exch")
+                    
+                    exch_filter = None if sel_ind_exch == "All" else sel_ind_exch
+                    ind_stocks = get_industry_stocks(df, sel_ind, exchange=exch_filter)
+                    if not ind_stocks.empty:
+                        st.success(f"📊 {len(ind_stocks)} stocks in **{sel_ind}**" + (f" ({sel_ind_exch})" if sel_ind_exch != "All" else ""))
+                        detail_cols = ["Ticker", "Exchange", "Sector", "Category", "Price", "Total Score", "Stars (Total)", "Sales CAGR", "Profit CAGR", "200 SMA Dist %"]
+                        detail_cols = [c for c in detail_cols if c in ind_stocks.columns]
+                        st.dataframe(ind_stocks[detail_cols], use_container_width=True)
+                    else:
+                        st.warning(f"No stocks found for industry: {sel_ind}")
+                else:
+                    st.info("No industry data available. Run a scan first.")

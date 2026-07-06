@@ -135,6 +135,11 @@ def fetch_stock_data(ticker):
         inst_share = held_by_institutions * 100.0 if held_by_institutions <= 1.0 else held_by_institutions
         public_share = max(0.0, 100.0 - promoter_share - inst_share)
 
+        # Sector, Industry, Exchange
+        sector = info.get('sector', "Unknown")
+        industry = info.get('industry', "Unknown")
+        exchange = "NSE" if ".NS" in ticker else ("BSE" if ".BO" in ticker else "Unknown")
+
         data = {
             "ticker": ticker,
             "current_price": current_price,
@@ -154,8 +159,11 @@ def fetch_stock_data(ticker):
             "price_history_6m": hist['Close'].tail(180).tolist() if len(hist) > 180 else hist['Close'].tolist(),
             "price_history_5y": hist['Close'].tail(5*252).tolist() if len(hist) > (5*252) else hist['Close'].tolist(),
             "sma_200": sma_200,
+            "sector": sector,
+            "industry": industry,
+            "exchange": exchange,
             "timestamp": datetime.datetime.now(),
-            "_cache_version": 2  # v2 = screeners.in data (10+ years CAGR)
+            "_cache_version": 3  # v3 = added sector, industry, exchange
         }
         return data
     except Exception as e:

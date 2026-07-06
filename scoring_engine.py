@@ -272,6 +272,11 @@ def score_stock(stock_data):
         is_above_200_sma = current_price >= sma_200
         dist_pct = ((current_price - sma_200) / sma_200) * 100.0
 
+    # Sector / Industry / Exchange
+    sector = stock_data.get("sector", "Unknown")
+    industry = stock_data.get("industry", "Unknown")
+    exchange = stock_data.get("exchange", "NSE")
+
     # === GURDEEP'S 24-STAR RATING SYSTEM (CAGR Thresholds) ===
     # Sales stars: Overall + 3Y + 5Y = max 12
     # Profit stars: Overall + 3Y + 5Y = max 12
@@ -297,6 +302,9 @@ def score_stock(stock_data):
     return {
         "Ticker": ticker,
         "Category": get_category(ticker),
+        "Sector": sector,
+        "Industry": industry,
+        "Exchange": exchange,
         "Price": round(current_price, 2),
         "200 SMA": round(sma_200, 2) if sma_200 else 0.0,
         "200 SMA Dist %": round(dist_pct, 2) if sma_200 else 0.0,

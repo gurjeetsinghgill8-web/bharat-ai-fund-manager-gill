@@ -615,6 +615,8 @@ if st.session_state["stock_cache"]:
     elif engine_page == "🔍 Page 2: Value & 200 SMA":
         df, continuous, red_alerts = run_scoring_v2(st.session_state["stock_cache"])
         latest_highs = pd.DataFrame()
+    elif engine_page == "🏭 Page 3: Sectors & Industries":
+        df, latest_highs, continuous, red_alerts = run_scoring(st.session_state["stock_cache"])
     else:
         # Portfolio Dashboard — no scoring needed
         pass

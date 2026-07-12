@@ -7,7 +7,10 @@ import plotly.graph_objects as go
 from dotenv import load_dotenv
 
 from symbols import get_all_tickers
-from data_fetcher import get_stock_data, batch_update_stocks, batch_update_stocks_parallel
+from data_fetcher import (
+    get_stock_data, batch_update_stocks, batch_update_stocks_parallel,
+    save_scan_results_to_db, load_cached_scan_from_db
+)
 from scoring_engine import run_scoring, score_stock, run_scoring_v2, score_stock_v2
 from sector_industry import (
     compute_nse_sectors, compute_bse_sectors, compute_all_sectors,
@@ -23,6 +26,10 @@ from portfolio_manager import (
     generate_portfolio_signals, export_portfolio_to_excel, check_and_trigger_alerts,
     play_alert_sound, show_desktop_notification,
     export_portfolio_to_json, import_portfolio_from_json, merge_portfolios, send_portfolio_via_email
+)
+from db import (
+    init_db, create_user, get_all_users, get_user_by_name, delete_user,
+    migrate_from_json, get_scan_meta
 )
 
 # Initialize config
@@ -176,6 +183,83 @@ st.markdown("""
         border: 1px solid #FF0000;
         animation: portAlertPulse 1.5s infinite;
     }
+    
+    /* ---- USER PROFILE SELECTOR STYLES ---- */
+    .user-profile-badge {
+        background: linear-gradient(135deg, #0284C7, #0369A1);
+        color: white;
+        padding: 8px 16px;
+        border-radius: 20px;
+        font-weight: bold;
+        font-size: 0.95rem;
+        display: inline-block;
+        margin: 5px 0;
+        box-shadow: 0 2px 8px rgba(2, 132, 199, 0.3);
+    }
+    
+    /* ---- MOBILE RESPONSIVE STYLES ---- */
+    @media (max-width: 768px) {
+        /* Stack metric cards vertically */
+        .metric-container {
+            padding: 10px;
+            margin-bottom: 8px;
+        }
+        .metric-value {
+            font-size: 1.4rem;
+        }
+        .metric-label {
+            font-size: 0.75rem;
+        }
+        
+        /* Touch-friendly buttons */
+        .stButton>button {
+            min-height: 44px !important;
+            font-size: 0.9rem !important;
+            padding: 10px 14px !important;
+        }
+        
+        /* Horizontal scroll for tables */
+        .stDataFrame {
+            overflow-x: auto !important;
+            -webkit-overflow-scrolling: touch;
+        }
+        
+        /* Headers smaller on mobile */
+        h1 { font-size: 1.4rem !important; }
+        h2 { font-size: 1.2rem !important; }
+        h3 { font-size: 1.05rem !important; }
+        
+        /* Portfolio alert box mobile */
+        .portfolio-alert-box {
+            font-size: 0.95rem;
+            padding: 12px;
+        }
+        
+        /* Sidebar mobile adjustments */
+        section[data-testid="stSidebar"] {
+            min-width: 260px !important;
+        }
+        
+        /* Red alert cards stack */
+        .red-alert-card {
+            font-size: 0.85rem;
+            padding: 8px;
+        }
+    }
+    
+    @media (max-width: 480px) {
+        .metric-value {
+            font-size: 1.1rem;
+        }
+        .metric-label {
+            font-size: 0.65rem;
+        }
+        h1 { font-size: 1.2rem !important; }
+        .portfolio-alert-box {
+            font-size: 0.85rem;
+            padding: 10px;
+        }
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -185,14 +269,48 @@ st_autorefresh = st.markdown("""
 """, unsafe_allow_html=True)
 
 # ------------------ STATE INITIALIZATION ------------------
+# DB Migration: Import old portfolio.json into SQLite (one-time)
+if "db_migrated" not in st.session_state:
+    migrate_from_json()
+    st.session_state["db_migrated"] = True
+
+# Multi-User: Create default user if no users exist
+if "users_initialized" not in st.session_state:
+    users = get_all_users()
+    if not users:
+        create_user("Gurjas")
+    st.session_state["users_initialized"] = True
+
+# Current user tracking
+if "current_user_id" not in st.session_state:
+    users = get_all_users()
+    if users:
+        st.session_state["current_user_id"] = users[0]["id"]
+        st.session_state["current_user_name"] = users[0]["name"]
+    else:
+        uid = create_user("Gurjas")
+        st.session_state["current_user_id"] = uid
+        st.session_state["current_user_name"] = "Gurjas"
+
+# Load stock cache from SQLite (persistent!) — NOT empty dict
 if "stock_cache" not in st.session_state:
-    st.session_state["stock_cache"] = {}
+    db_cache = load_cached_scan_from_db()
+    if db_cache:
+        st.session_state["stock_cache"] = db_cache
+        scan_meta = get_scan_meta()
+        st.session_state["last_update"] = scan_meta.get("last_scan_time", None)
+    else:
+        st.session_state["stock_cache"] = {}
+        st.session_state["last_update"] = None
+
 if "last_update" not in st.session_state:
     st.session_state["last_update"] = None
 if "chat_messages" not in st.session_state:
     st.session_state["chat_messages"] = []
+
+# Portfolio: load from SQLite for current user
 if "portfolio" not in st.session_state:
-    st.session_state["portfolio"] = load_portfolio()
+    st.session_state["portfolio"] = load_portfolio(user_id=st.session_state["current_user_id"])
 if "portfolio_refreshed" not in st.session_state:
     st.session_state["portfolio_refreshed"] = False
 if "alert_stocks_triggered" not in st.session_state:
@@ -205,10 +323,73 @@ if "scan_mode" not in st.session_state:
 if "all_tickers" not in st.session_state:
     st.session_state["all_tickers"] = get_all_tickers(use_full=False)
 
+
 # ------------------ SIDEBAR ------------------
 st.sidebar.image("https://img.icons8.com/nolan/96/artificial-intelligence.png", width=90)
 st.sidebar.title("BHARAT AI GILL")
-st.sidebar.subheader("Jarvis Option/Fund Core v1.03")
+st.sidebar.subheader("Jarvis Option/Fund Core v2.0")
+
+# ------------------ USER PROFILE SELECTOR ------------------
+st.sidebar.markdown("---")
+st.sidebar.markdown("👤 **Portfolio Owner**")
+
+# Get all users
+all_users_list = get_all_users()
+user_names = [u["name"] for u in all_users_list]
+
+if user_names:
+    # User selector dropdown
+    current_idx = 0
+    current_name = st.session_state.get("current_user_name", "")
+    if current_name in user_names:
+        current_idx = user_names.index(current_name)
+    
+    selected_user_name = st.sidebar.selectbox(
+        "Switch User",
+        user_names,
+        index=current_idx,
+        key="user_selector"
+    )
+    
+    # Handle user switch
+    if selected_user_name != st.session_state.get("current_user_name", ""):
+        user_obj = get_user_by_name(selected_user_name)
+        if user_obj:
+            st.session_state["current_user_id"] = user_obj["id"]
+            st.session_state["current_user_name"] = user_obj["name"]
+            # Reload portfolio for new user
+            st.session_state["portfolio"] = load_portfolio(user_id=user_obj["id"])
+            st.session_state["portfolio_refreshed"] = False
+            st.session_state["alert_stocks_triggered"] = []
+            st.rerun()
+
+# Show active user badge
+st.sidebar.markdown(
+    f'<div class="user-profile-badge">👤 {st.session_state.get("current_user_name", "Unknown")}</div>',
+    unsafe_allow_html=True
+)
+
+# Create new user
+with st.sidebar.expander("➕ Add New User", expanded=False):
+    new_user_name = st.text_input("Enter name", placeholder="e.g. Sister, Dost, Papa", key="new_user_input")
+    if st.button("Create User", key="create_user_btn"):
+        if new_user_name and new_user_name.strip():
+            clean_name = new_user_name.strip()
+            existing = get_user_by_name(clean_name)
+            if existing:
+                st.warning(f"'{clean_name}' already exists!")
+            else:
+                uid = create_user(clean_name)
+                st.session_state["current_user_id"] = uid
+                st.session_state["current_user_name"] = clean_name
+                st.session_state["portfolio"] = []
+                st.session_state["portfolio_refreshed"] = False
+                st.success(f"✅ User '{clean_name}' created!")
+                st.rerun()
+        else:
+            st.warning("Please enter a name")
+
+st.sidebar.markdown("---")
 
 # Show Turn Around info in sidebar
 st.sidebar.markdown("🔄 **Turn Around (TA):** Overall CAGR > Both 3Y & 5Y CAGR → Bonus ⭐ + 🔄 Badge", unsafe_allow_html=True)
@@ -293,17 +474,30 @@ if st.sidebar.button("🚀 Run System Scan"):
         results = batch_update_stocks(all_tickers, force_refresh=True, progress_callback=update_prog)
     st.session_state["stock_cache"] = results
     st.session_state["last_update"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
-    st.sidebar.success(f"✅ Scan Complete! {len(results)} stocks cached.")
+    # 💾 Save to SQLite for persistence across restarts
+    save_scan_results_to_db(results)
+    st.sidebar.success(f"✅ Scan Complete! {len(results)} stocks cached & persisted to DB.")
 
-# Check cache status on load
+# Check cache status on load — try SQLite first, then pickle files
 if not st.session_state["stock_cache"]:
-    results = {}
-    for ticker in all_tickers:
-        data = get_stock_data(ticker, force_refresh=False)
-        if data:
-            results[ticker] = data
-    st.session_state["stock_cache"] = results
-    st.session_state["last_update"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    # Try loading from SQLite DB first
+    db_cache = load_cached_scan_from_db()
+    if db_cache:
+        st.session_state["stock_cache"] = db_cache
+        scan_meta = get_scan_meta()
+        st.session_state["last_update"] = scan_meta.get("last_scan_time", "From DB")
+    else:
+        # Fallback to pickle cache files
+        results = {}
+        for ticker in all_tickers:
+            data = get_stock_data(ticker, force_refresh=False)
+            if data:
+                results[ticker] = data
+        st.session_state["stock_cache"] = results
+        st.session_state["last_update"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+        # Save to SQLite for future persistence
+        if results:
+            save_scan_results_to_db(results)
 
 last_up = st.session_state["last_update"] or "Never"
 st.sidebar.caption(f"Last data sync: {last_up}")
@@ -340,13 +534,19 @@ def render_portfolio_page(suffix="port"):
     Render the full Excel-style portfolio dashboard.
     suffix param ensures unique Streamlit widget keys when called multiple times.
     """
+    current_uid = st.session_state.get("current_user_id")
+    current_uname = st.session_state.get("current_user_name", "Unknown")
+    
+    # Show which user's portfolio is being displayed
+    st.markdown(f"👤 **Showing portfolio for: {current_uname}**")
+    
     # Refresh portfolio prices on every page load (once per session)
     if not st.session_state["portfolio_refreshed"] and st.session_state["portfolio"]:
-        with st.spinner("Refreshing portfolio prices..."):
-            st.session_state["portfolio"] = update_portfolio_prices(st.session_state["portfolio"])
+        with st.spinner(f"Refreshing portfolio prices for {current_uname}..."):
+            st.session_state["portfolio"] = update_portfolio_prices(st.session_state["portfolio"], user_id=current_uid)
             st.session_state["portfolio_refreshed"] = True
             # Trigger all alert systems for stocks below 200 SMA
-            triggered = check_and_trigger_alerts(st.session_state["portfolio"])
+            triggered = check_and_trigger_alerts(st.session_state["portfolio"], user_name=current_uname)
             st.session_state["alert_stocks_triggered"] = [h["symbol"] for h in triggered]
             # Note: No st.rerun() here — WebSocket forward-msg cache misses on Streamlit Cloud.
             # The updated data is already in session_state and renders immediately.
@@ -366,9 +566,9 @@ def render_portfolio_page(suffix="port"):
         with col_a4:
             st.markdown("<br/>", unsafe_allow_html=True)
             if st.button("Add", key=f"{suffix}_port_add_btn"):
-                st.session_state["portfolio"] = add_holding(new_sym, new_buy, int(new_qty))
-                st.success(f"✅ Added {new_sym.replace('.NS', '')} to portfolio!")
-                st.session_state["portfolio"] = update_portfolio_prices(st.session_state["portfolio"])
+                st.session_state["portfolio"] = add_holding(new_sym, new_buy, int(new_qty), user_id=current_uid)
+                st.success(f"✅ Added {new_sym.replace('.NS', '')} to {current_uname}'s portfolio!")
+                st.session_state["portfolio"] = update_portfolio_prices(st.session_state["portfolio"], user_id=current_uid)
                 st.rerun()
     
     # ---- Portfolio Share / Import Section ----
@@ -416,7 +616,7 @@ def render_portfolio_page(suffix="port"):
                     
                     if imported_holdings and len(imported_holdings) > 0:
                         merged = merge_portfolios(portfolio, imported_holdings)
-                        save_portfolio(merged)
+                        save_portfolio(merged, user_id=current_uid)
                         st.session_state["portfolio"] = merged
                         st.success(f"✅ Imported {len(imported_holdings)} holdings! Portfolio now has {len(merged)} stocks.")
                         st.rerun()
@@ -431,9 +631,9 @@ def render_portfolio_page(suffix="port"):
     col_r1, col_r2, col_r3, col_r4 = st.columns([3, 2, 2, 3])
     with col_r2:
         if st.button("🔄 Refresh Prices Now", use_container_width=True, key=f"{suffix}_port_refresh"):
-            with st.spinner("Fetching latest prices..."):
-                st.session_state["portfolio"] = update_portfolio_prices(st.session_state["portfolio"])
-                triggered = check_and_trigger_alerts(st.session_state["portfolio"])
+            with st.spinner(f"Fetching latest prices for {current_uname}..."):
+                st.session_state["portfolio"] = update_portfolio_prices(st.session_state["portfolio"], user_id=current_uid)
+                triggered = check_and_trigger_alerts(st.session_state["portfolio"], user_name=current_uname)
                 st.session_state["alert_stocks_triggered"] = [h["symbol"] for h in triggered]
             st.rerun()
     with col_r3:
@@ -574,10 +774,10 @@ def render_portfolio_page(suffix="port"):
         with col_rem2:
             st.markdown("<br/>", unsafe_allow_html=True)
             if portfolio and st.button("🗑️ Remove", use_container_width=True, key=f"{suffix}_port_rem_btn"):
-                st.session_state["portfolio"] = remove_holding(rem_sym)
+                st.session_state["portfolio"] = remove_holding(rem_sym, user_id=current_uid)
                 st.session_state["alert_stocks_triggered"] = [h["symbol"] for h in st.session_state["portfolio"]
                                                                if h.get("sma_200", 0) > 0 and not h.get("above_sma", False)]
-                st.warning(f"Removed {rem_sym.replace('.NS', '')} from portfolio.")
+                st.warning(f"Removed {rem_sym.replace('.NS', '')} from {current_uname}'s portfolio.")
                 st.rerun()
 
 
@@ -633,10 +833,12 @@ if st.session_state["stock_cache"]:
 
 # ------------------ MAIN SCREEN ------------------
 if engine_page == "📊 Portfolio Dashboard":
-    st.title("📊 BHARAT AI PORTFOLIO MANAGER")
+    _current_user = st.session_state.get("current_user_name", "")
+    st.title(f"📊 {_current_user}'s PORTFOLIO MANAGER")
     st.markdown("### Personal Portfolio Tracker — Excel-Style Dashboard with Auto Signals & Alerts")
-    st.write("Track your own holdings against the 200-day SMA with **auto signals, live alerts, and sound notifications**. Dashboard auto-refreshes every 15 minutes.")
+    st.write(f"Tracking **{_current_user}'s** holdings against the 200-day SMA with **auto signals, live alerts, and sound notifications**. Dashboard auto-refreshes every 15 minutes.")
     st.caption("💡 Tip: If a stock falls below the 200 SMA, you'll get **🔊 sound beeps + 📢 desktop notifications + 📧 email alert + 🔴 pulsing red banner** — all automated.")
+    st.caption("💡 Switch users from the sidebar dropdown to manage different portfolios.")
     st.markdown("---")
     render_portfolio_page(suffix="dedicated")
     

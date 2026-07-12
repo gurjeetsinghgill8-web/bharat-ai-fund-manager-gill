@@ -1,18 +1,38 @@
+"""
+portfolio_manager.py — Multi-User Portfolio Manager with SQLite Persistence
+
+UPGRADED from single-user portfolio.json to multi-user SQLite.
+Every function now takes user_id to isolate portfolios per person.
+
+Key changes from v1:
+  - load_portfolio(user_id) → loads ONLY that user's stocks from SQLite
+  - save_portfolio(user_id, holdings) → saves to SQLite (permanent)
+  - add_holding(user_id, symbol, buy_price, quantity) → per-user
+  - remove_holding(user_id, symbol) → per-user
+  - All alert/export functions are user-scoped
+"""
+
 import os
 import json
 import datetime
 import yfinance as yf
 import pandas as pd
 
+from db import (
+    load_portfolio_db, save_portfolio_db, add_holding_db, remove_holding_db,
+    get_all_user_ids_with_portfolios, get_all_users
+)
+
+# Legacy file path — kept for migration only
 PORTFOLIO_FILE = "portfolio.json"
 
 # ---------------------------------------------------------------------------
-# Portfolio CRUD (JSON persistence)
+# Portfolio CRUD (SQLite-backed, multi-user)
 # ---------------------------------------------------------------------------
 
-def load_portfolio():
+def load_portfolio(user_id=None):
     """
-    Loads the user's personal portfolio from portfolio.json.
+    Loads a user's portfolio from SQLite.
     Returns a list of holding dicts, or an empty list if none exist.
     Each holding:
     {
@@ -27,53 +47,34 @@ def load_portfolio():
         "last_updated": None
     }
     """
-    if not os.path.exists(PORTFOLIO_FILE):
+    if user_id is None:
         return []
-    try:
-        with open(PORTFOLIO_FILE, "r") as f:
-            return json.load(f)
-    except (json.JSONDecodeError, FileNotFoundError):
+    return load_portfolio_db(user_id)
+
+
+def save_portfolio(holdings, user_id=None):
+    """Saves the portfolio to SQLite for a specific user."""
+    if user_id is None:
+        return
+    save_portfolio_db(user_id, holdings)
+
+
+def add_holding(symbol, buy_price, quantity, user_id=None):
+    """
+    Adds a new holding to the user's portfolio.
+    If the symbol already exists for this user, updates the existing entry.
+    """
+    if user_id is None:
         return []
+    return add_holding_db(user_id, symbol, buy_price, quantity)
 
-def save_portfolio(holdings):
-    """Saves the portfolio list to portfolio.json."""
-    with open(PORTFOLIO_FILE, "w") as f:
-        json.dump(holdings, f, indent=2)
 
-def add_holding(symbol, buy_price, quantity):
-    """
-    Adds a new holding to the portfolio.
-    If the symbol already exists, updates the existing entry.
-    """
-    holdings = load_portfolio()
-    # Check if symbol already exists
-    for h in holdings:
-        if h["symbol"] == symbol:
-            h["buy_price"] = buy_price
-            h["quantity"] = quantity
-            save_portfolio(holdings)
-            return holdings
-    # New entry
-    holdings.append({
-        "symbol": symbol,
-        "buy_price": buy_price,
-        "quantity": quantity,
-        "ltp": 0.0,
-        "sma_200": 0.0,
-        "dist_pct": 0.0,
-        "above_sma": False,
-        "signal": "WAIT",
-        "last_updated": None
-    })
-    save_portfolio(holdings)
-    return holdings
+def remove_holding(symbol, user_id=None):
+    """Removes a holding from the user's portfolio by symbol."""
+    if user_id is None:
+        return []
+    return remove_holding_db(user_id, symbol)
 
-def remove_holding(symbol):
-    """Removes a holding from the portfolio by symbol."""
-    holdings = load_portfolio()
-    holdings = [h for h in holdings if h["symbol"] != symbol]
-    save_portfolio(holdings)
-    return holdings
 
 # ---------------------------------------------------------------------------
 # Lightweight price + SMA fetcher (no financials – fast)
@@ -143,11 +144,11 @@ def generate_portfolio_signals(holdings):
     
     return holdings
 
-def update_portfolio_prices(holdings):
+def update_portfolio_prices(holdings, user_id=None):
     """
     Iterates over all holdings and fetches fresh LTP + 200 SMA for each.
     Updates ltp, sma_200, dist_pct, above_sma, signal, and last_updated in-place.
-    Auto-saves to portfolio.json after update.
+    Auto-saves to SQLite after update.
     
     Returns the updated list.
     """
@@ -171,7 +172,10 @@ def update_portfolio_prices(holdings):
     # Generate signals after prices update
     holdings = generate_portfolio_signals(holdings)
     
-    save_portfolio(holdings)
+    # Save to SQLite (persistent!)
+    if user_id is not None:
+        save_portfolio(holdings, user_id=user_id)
+    
     return holdings
 
 # ---------------------------------------------------------------------------
@@ -214,10 +218,11 @@ def show_desktop_notification(title, message):
     except Exception as e:
         print(f"Desktop notification error: {e}")
 
-def send_alert_email(holding):
+def send_alert_email(holding, user_name=""):
     """
     Sends an instant alert email when a stock breaches below 200 SMA.
     Uses SMTP config from environment variables (same as email_dispatcher.py).
+    Now includes user name in the alert for multi-user support.
     """
     try:
         import smtplib
@@ -241,12 +246,15 @@ def send_alert_email(holding):
         qty = holding["quantity"]
         pl_pct = round(((ltp - buy_price) / buy_price) * 100, 2)
         
+        user_tag = f" [{user_name}]" if user_name else ""
+        
         msg = EmailMessage()
         msg.set_content(f"""
-🚨🚨 BHARAT AI FUND MANAGER - CRITICAL ALERT 🚨🚨
+🚨🚨 BHARAT AI FUND MANAGER - CRITICAL ALERT{user_tag} 🚨🚨
 
 ⚠️ {sym} has fallen BELOW its 200-day SMA!
 
+Portfolio Owner: {user_name or 'Default'}
 Current Price:  ₹{ltp}
 200 SMA:       ₹{sma}
 Distance:      {dist}%
@@ -260,7 +268,7 @@ This is a strong signal that the trend has turned bearish.
 — Jarvis Auto Alert System
         """)
         
-        msg["Subject"] = f"🚨 CRITICAL: {sym} BELOW 200 SMA — EXIT NOW!"
+        msg["Subject"] = f"🚨 CRITICAL{user_tag}: {sym} BELOW 200 SMA — EXIT NOW!"
         msg["From"] = smtp_user
         msg["To"] = recipients
         
@@ -269,14 +277,14 @@ This is a strong signal that the trend has turned bearish.
             server.login(smtp_user, smtp_pass)
             server.send_message(msg)
         
-        print(f"Alert email sent for {sym}")
+        print(f"Alert email sent for {sym} (user: {user_name})")
         return True
         
     except Exception as e:
         print(f"Error sending alert email: {e}")
         return False
 
-def check_and_trigger_alerts(holdings):
+def check_and_trigger_alerts(holdings, user_name=""):
     """
     Master alert trigger: checks all holdings and fires ALL alert types
     for any stock that is below 200 SMA.
@@ -305,7 +313,7 @@ def check_and_trigger_alerts(holdings):
             already_emailed_today = h.get("_alert_emailed_date", "")
             today_str = datetime.datetime.now().strftime("%Y-%m-%d")
             if already_emailed_today != today_str:
-                send_alert_email(h)
+                send_alert_email(h, user_name=user_name)
                 h["_alert_emailed_date"] = today_str
     
     return below_sma
@@ -552,17 +560,16 @@ def send_portfolio_via_email(holdings, recipient_email=None):
         
         # Determine recipients
         if recipient_email:
-            # Single custom recipient (user typed their email)
             recipients = [recipient_email.strip()]
         elif recipients_str:
             recipients = [r.strip() for r in recipients_str.split(",") if r.strip()]
         else:
             return False, "No recipient email provided and EMAIL_RECIPIENTS not set"
-            return False, "Failed to export portfolio"
         
-        recipients = [r.strip() for r in recipients_str.split(",") if r.strip()]
-        if recipient_email:
-            recipients = [recipient_email]
+        # Export to JSON first
+        json_path = export_portfolio_to_json(holdings)
+        if not json_path:
+            return False, "Failed to export portfolio to JSON"
         
         msg = MIMEMultipart()
         msg['From'] = smtp_user

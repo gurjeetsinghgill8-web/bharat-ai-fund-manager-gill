@@ -22,3 +22,9 @@ reports/
 Thumbs.db
 screener_cache/
 jarvis_keys.txt
+
+# Local DB & logs
+*.db
+*.log
+nul
+

@@ -7,6 +7,7 @@ import yfinance as yf
 import pandas as pd
 from dotenv import load_dotenv
 from screeners_scraper import fetch_screener_data
+from db import save_scan_cache, load_scan_cache, get_scan_meta
 
 # Load configuration
 load_dotenv()
@@ -257,3 +258,37 @@ def batch_update_stocks_parallel(tickers, force_refresh=False, max_workers=10, p
                 progress_callback(completed[0], total, ticker)
     
     return results
+
+
+# ---------------------------------------------------------------------------
+# SCAN PERSISTENCE (SQLite layer)
+# ---------------------------------------------------------------------------
+
+def save_scan_results_to_db(results):
+    """
+    Saves scan results to SQLite for persistence across app restarts.
+    Called after every scan (manual or automated).
+    """
+    try:
+        save_scan_cache(results)
+        print(f"✅ Scan results saved to SQLite ({len(results)} stocks)")
+    except Exception as e:
+        print(f"Error saving scan to DB: {e}")
+
+
+def load_cached_scan_from_db():
+    """
+    Loads last scan results from SQLite.
+    Called on app startup to avoid empty dashboard.
+    Returns: {ticker: {data_dict}} or empty dict.
+    """
+    try:
+        results = load_scan_cache()
+        if results:
+            meta = get_scan_meta()
+            last_time = meta.get("last_scan_time", "Unknown")
+            print(f"📦 Loaded {len(results)} stocks from SQLite cache (last scan: {last_time})")
+        return results
+    except Exception as e:
+        print(f"Error loading scan from DB: {e}")
+        return {}

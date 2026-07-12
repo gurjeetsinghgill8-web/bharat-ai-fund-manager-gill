@@ -9,7 +9,7 @@ Tables:
   - scan_cache: Last stock scan results (so data doesn't disappear on restart)
   - scan_meta: Metadata about when the last scan was run
 
-Thread-safe: Uses connection-per-operation pattern with WAL mode.
+Thread-safe: Uses connection-per-operation pattern with DELETE journal mode.
 """
 
 import os
@@ -23,11 +23,12 @@ DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bharat_ai_fu
 
 def get_connection():
     """
-    Creates a new SQLite connection with WAL mode for concurrent access.
-    Each operation should open/close its own connection (thread-safe pattern).
+    Creates a new SQLite connection.
+    Each operation opens/closes its own connection (thread-safe pattern).
+    Uses DELETE journal mode to ensure compatibility with Linux container filesystems.
     """
     conn = sqlite3.connect(DB_PATH, timeout=10)
-    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA journal_mode=DELETE")
     conn.execute("PRAGMA foreign_keys=ON")
     conn.row_factory = sqlite3.Row
     return conn

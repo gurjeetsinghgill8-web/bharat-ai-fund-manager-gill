@@ -422,6 +422,11 @@ def score_stock_v2(stock_data):
     debt_eq = stock_data["debt_to_equity"]
     sma_200 = stock_data.get("sma_200", 0.0)
     
+    # Sector / Industry / Exchange
+    sector = stock_data.get("sector", "Unknown")
+    industry = stock_data.get("industry", "Unknown")
+    exchange = stock_data.get("exchange", "NSE")
+    
     # Proximity and filter check for 200 SMA
     is_above_200_sma = True
     dist_pct = 0.0
@@ -574,6 +579,9 @@ def score_stock_v2(stock_data):
 
     return {
         "Ticker": ticker,
+        "Exchange": exchange,
+        "Sector": sector,
+        "Industry": industry,
         "Category": get_category(ticker),
         "Price": round(current_price, 2),
         "200 SMA": round(sma_200, 2) if sma_200 else 0.0,

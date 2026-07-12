@@ -294,6 +294,10 @@ if "current_user_id" not in st.session_state:
         st.session_state["current_user_name"] = "Gurjas"
         st.session_state["current_user_email"] = ""
 
+# Initialize scanning state
+if "scanning_active" not in st.session_state:
+    st.session_state["scanning_active"] = False
+
 # Load stock cache from SQLite (persistent!) — NOT empty dict
 if "stock_cache" not in st.session_state:
     db_cache = load_cached_scan_from_db()
@@ -497,30 +501,8 @@ all_tickers = st.session_state["all_tickers"]
 st.sidebar.caption(f"📊 Current universe: {len(all_tickers)} stocks")
 
 if st.sidebar.button("🚀 Run System Scan"):
-    progress_bar = st.sidebar.progress(0.0)
-    status_text = st.sidebar.empty()
-
-    def update_prog(idx, total, ticker):
-        pct = float(idx + 1) / total
-        progress_bar.progress(pct)
-        status_text.write(f"Scrubbing: `{ticker}` ({idx+1}/{total})")
-
-    use_full = selected_limit > 0
-    total_stocks = len(all_tickers)
-    
-    if use_full:
-        if total_stocks > 200:
-            st.sidebar.info(f"🌐 Scanning {total_stocks} stocks in parallel (10 workers)...")
-            results = batch_update_stocks_parallel(all_tickers, force_refresh=True, max_workers=10, progress_callback=update_prog)
-        else:
-            results = batch_update_stocks(all_tickers, force_refresh=True, progress_callback=update_prog)
-    else:
-        results = batch_update_stocks(all_tickers, force_refresh=True, progress_callback=update_prog)
-    st.session_state["stock_cache"] = results
-    st.session_state["last_update"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
-    # 💾 Save to SQLite for persistence across restarts
-    save_scan_results_to_db(results)
-    st.sidebar.success(f"✅ Scan Complete! {len(results)} stocks cached & persisted to DB.")
+    st.session_state["scanning_active"] = True
+    st.rerun()
 
 # Check cache status on load — try SQLite first, then pickle files
 if not st.session_state["stock_cache"]:
@@ -876,7 +858,51 @@ if st.session_state["stock_cache"]:
     df = df[df["Total Score"] >= min_score] if not df.empty else df
 
 # ------------------ MAIN SCREEN ------------------
-if engine_page == "📊 Portfolio Dashboard":
+if st.session_state.get("scanning_active", False):
+    st.title("🔄 BHARAT AI - SYSTEM SCAN IN PROGRESS")
+    st.markdown("""
+    <div style="background-color: #0B192C; border: 2px solid #008DDA; color: #FFFFFF; font-weight: bold; font-size: 22px; padding: 25px; border-radius: 12px; text-align: center; margin-bottom: 25px; box-shadow: 0 4px 15px rgba(0, 141, 218, 0.4);">
+        <span style="font-size: 30px;">🔄</span> <b>LIVE SYSTEM SCANNING IS RUNNING NOW!</b><br/>
+        <span style="color: #008DDA; font-size: 16px;">Jarvis is connecting to Screener.in and Yahoo Finance to fetch 10+ years of financials and technical metrics.</span><br/>
+        <span style="font-size: 15px; font-weight: normal; color: #E0E0E0;">Please do not close or reload this browser tab. The dashboard will automatically refresh once the scan completes!</span>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Run scan
+    with st.spinner("Scrubbing tickers, calculating CAGRs, and scoring value indicators..."):
+        progress_bar = st.progress(0.0)
+        status_text = st.empty()
+
+        def _update_prog(idx, total, ticker):
+            pct = float(idx + 1) / total
+            progress_bar.progress(pct)
+            status_text.markdown(f"🔍 **Scrubbing Ticker:** `{ticker}` ({idx+1}/{total})")
+
+        use_full = selected_limit > 0
+        total_stocks = len(all_tickers)
+        
+        try:
+            if use_full:
+                if total_stocks > 200:
+                    st.info(f"🌐 Scanning {total_stocks} stocks in parallel (10 workers)...")
+                    results = batch_update_stocks_parallel(all_tickers, force_refresh=True, max_workers=10, progress_callback=_update_prog)
+                else:
+                    results = batch_update_stocks(all_tickers, force_refresh=True, progress_callback=_update_prog)
+            else:
+                results = batch_update_stocks(all_tickers, force_refresh=True, progress_callback=_update_prog)
+            
+            st.session_state["stock_cache"] = results
+            st.session_state["last_update"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+            save_scan_results_to_db(results)
+            st.session_state["scanning_active"] = False
+            st.success(f"✅ Scan Complete! {len(results)} stocks cached & persisted to DB.")
+            st.rerun()
+        except Exception as e:
+            st.session_state["scanning_active"] = False
+            st.error(f"Scan failed: {e}")
+            st.rerun()
+
+elif engine_page == "📊 Portfolio Dashboard":
     _current_user = st.session_state.get("current_user_name", "")
     st.title(f"📊 {_current_user}'s PORTFOLIO MANAGER")
     st.markdown("### Personal Portfolio Tracker — Excel-Style Dashboard with Auto Signals & Alerts")

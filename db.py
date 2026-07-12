@@ -16,9 +16,28 @@ import os
 import json
 import sqlite3
 import datetime
+import tempfile
 
-# Database file — lives next to app.py, persists permanently
-DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bharat_ai_fund.db")
+DB_NAME = "bharat_ai_fund.db"
+LOCAL_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Detect if the local repository directory is writeable (e.g. read-only on Streamlit Cloud mounts)
+_is_writeable = False
+try:
+    _test_path = os.path.join(LOCAL_DIR, ".db_write_test")
+    with open(_test_path, "w") as _f:
+        _f.write("1")
+    os.remove(_test_path)
+    _is_writeable = True
+except Exception:
+    _is_writeable = False
+
+if _is_writeable:
+    DB_PATH = os.path.join(LOCAL_DIR, DB_NAME)
+else:
+    # Fallback to writeable system temp folder for Streamlit Cloud
+    DB_PATH = os.path.join(tempfile.gettempdir(), DB_NAME)
+
 
 
 def get_connection():

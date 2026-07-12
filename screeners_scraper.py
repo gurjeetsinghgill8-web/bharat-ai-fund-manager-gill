@@ -23,7 +23,26 @@ import requests
 from bs4 import BeautifulSoup
 
 # Cache settings
-SCREENER_CACHE_DIR = "screener_cache"
+import tempfile
+
+LOCAL_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Detect if the local repository directory is writeable
+_is_writeable = False
+try:
+    _test_path = os.path.join(LOCAL_DIR, ".screener_write_test")
+    with open(_test_path, "w") as _f:
+        _f.write("1")
+    os.remove(_test_path)
+    _is_writeable = True
+except Exception:
+    _is_writeable = False
+
+if _is_writeable:
+    SCREENER_CACHE_DIR = os.path.join(LOCAL_DIR, "screener_cache")
+else:
+    SCREENER_CACHE_DIR = os.path.join(tempfile.gettempdir(), "screener_cache")
+
 SCREENER_CACHE_DAYS = 14  # Re-check every 14 days
 
 if not os.path.exists(SCREENER_CACHE_DIR):

@@ -5,8 +5,26 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 
-# Ensure reports directory exists
-REPORTS_DIR = "reports"
+import tempfile
+
+LOCAL_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Detect if the local repository directory is writeable
+_is_writeable = False
+try:
+    _test_path = os.path.join(LOCAL_DIR, ".report_write_test")
+    with open(_test_path, "w") as _f:
+        _f.write("1")
+    os.remove(_test_path)
+    _is_writeable = True
+except Exception:
+    _is_writeable = False
+
+if _is_writeable:
+    REPORTS_DIR = os.path.join(LOCAL_DIR, "reports")
+else:
+    REPORTS_DIR = os.path.join(tempfile.gettempdir(), "reports")
+
 os.makedirs(REPORTS_DIR, exist_ok=True)
 
 

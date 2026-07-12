@@ -9,10 +9,27 @@ from dotenv import load_dotenv
 from screeners_scraper import fetch_screener_data
 from db import save_scan_cache, load_scan_cache, get_scan_meta
 
-# Load configuration
 load_dotenv()
-CACHE_DIR = "data_cache"
 CACHE_EXPIRY_DAYS = int(os.getenv("CACHE_EXPIRY_DAYS", "7"))
+import tempfile
+
+LOCAL_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Detect if the local repository directory is writeable
+_is_writeable = False
+try:
+    _test_path = os.path.join(LOCAL_DIR, ".data_write_test")
+    with open(_test_path, "w") as _f:
+        _f.write("1")
+    os.remove(_test_path)
+    _is_writeable = True
+except Exception:
+    _is_writeable = False
+
+if _is_writeable:
+    CACHE_DIR = os.path.join(LOCAL_DIR, "data_cache")
+else:
+    CACHE_DIR = os.path.join(tempfile.gettempdir(), "data_cache")
 
 if not os.path.exists(CACHE_DIR):
     os.makedirs(CACHE_DIR)

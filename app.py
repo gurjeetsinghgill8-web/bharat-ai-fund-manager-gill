@@ -409,6 +409,32 @@ with st.sidebar.expander("➕ Add New User", expanded=False):
 
 st.sidebar.markdown("---")
 
+# User Manual Download Button
+st.sidebar.markdown("📘 **Documentation**")
+_manual_path = os.path.join("reports", "user_manual.pdf")
+if not os.path.exists(_manual_path):
+    try:
+        from report_generator import generate_user_manual_pdf
+        generate_user_manual_pdf("user_manual.pdf")
+    except Exception as _e:
+        print(f"Error generating manual: {_e}")
+
+if os.path.exists(_manual_path):
+    try:
+        with open(_manual_path, "rb") as _f:
+            st.sidebar.download_button(
+                label="📥 Download User Manual PDF",
+                data=_f,
+                file_name="Bharat_AI_Fund_Manager_User_Manual.pdf",
+                mime="application/pdf",
+                key="download_manual_btn",
+                use_container_width=True
+            )
+    except Exception as _e:
+        st.sidebar.error("Error reading manual PDF")
+
+st.sidebar.markdown("---")
+
 # Show Turn Around info in sidebar
 st.sidebar.markdown("🔄 **Turn Around (TA):** Overall CAGR > Both 3Y & 5Y CAGR → Bonus ⭐ + 🔄 Badge", unsafe_allow_html=True)
 

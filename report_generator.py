@@ -490,3 +490,176 @@ def generate_pdf_report_v2(ranked_df, filename):
     except Exception as e:
         print(f"Error generating PDF report: {str(e)}")
         return False
+
+
+def generate_user_manual_pdf(filename="user_manual.pdf"):
+    """
+    Generates a beautifully formatted User & Setup Manual PDF using ReportLab.
+    Save it to reports/ directory and return filepath.
+    """
+    try:
+        filepath = _resolve_path(filename)
+        doc = SimpleDocTemplate(filepath, pagesize=letter, rightMargin=40, leftMargin=40, topMargin=40, bottomMargin=40)
+        story = []
+        
+        # Color System
+        primary_color = colors.HexColor("#0B192C")
+        accent_color = colors.HexColor("#008DDA")
+        text_color = colors.HexColor("#333333")
+        light_bg = colors.HexColor("#F5F7F8")
+        
+        # Styles
+        styles = getSampleStyleSheet()
+        
+        title_style = ParagraphStyle(
+            'ManualTitle',
+            parent=styles['Heading1'],
+            fontName='Helvetica-Bold',
+            fontSize=22,
+            leading=26,
+            textColor=primary_color,
+            alignment=1,
+            spaceAfter=15
+        )
+        
+        h1_style = ParagraphStyle(
+            'ManualH1',
+            parent=styles['Heading2'],
+            fontName='Helvetica-Bold',
+            fontSize=13,
+            leading=16,
+            textColor=primary_color,
+            spaceBefore=12,
+            spaceAfter=6,
+            keepWithNext=True
+        )
+        
+        body_style = ParagraphStyle(
+            'ManualBody',
+            parent=styles['BodyText'],
+            fontName='Helvetica',
+            fontSize=9,
+            leading=13,
+            textColor=text_color,
+            spaceAfter=8
+        )
+        
+        bullet_style = ParagraphStyle(
+            'ManualBullet',
+            parent=styles['Normal'],
+            fontName='Helvetica',
+            fontSize=9,
+            leading=13,
+            textColor=text_color,
+            leftIndent=15,
+            firstLineIndent=-10,
+            spaceAfter=5
+        )
+        
+        code_style = ParagraphStyle(
+            'ManualCode',
+            parent=styles['Code'],
+            fontName='Courier',
+            fontSize=8,
+            leading=10,
+            textColor=colors.HexColor("#2C3E50"),
+            backColor=colors.HexColor("#ECF0F1"),
+            borderPadding=6,
+            spaceAfter=10
+        )
+        
+        # Header / Cover Info
+        story.append(Paragraph("BHARAT AI FUND MANAGER GILL — USER MANUAL & SETUP GUIDE", title_style))
+        story.append(Paragraph("Complete Technical Documentation, Twice-Daily Background Sync Setup, and Email Settings", ParagraphStyle('ManualSub', fontName='Helvetica-Oblique', fontSize=10, textColor=accent_color, alignment=1, spaceAfter=20)))
+        story.append(Spacer(1, 10))
+        
+        # Section 1: Overview
+        story.append(Paragraph("1. System Overview", h1_style))
+        story.append(Paragraph(
+            "The Bharat AI Fund Manager is a persistent, multi-user portfolio tracking and autonomous option/equity momentum screening tool "
+            "designed specifically for Indian equities (NSE & BSE). It tracks and ranks stocks using a multi-factor scoring engine, matches them "
+            "against their 200-day Simple Moving Average (SMA), and issues automated siren and email alerts if any stock slips into a bearish zone.",
+            body_style
+        ))
+        
+        # Section 2: How Email Alerts Work
+        story.append(Paragraph("2. How Automated Email Alerts Work (100% Free!)", h1_style))
+        story.append(Paragraph(
+            "The system uses the standard Simple Mail Transfer Protocol (SMTP) to send outgoing emails. This process is **completely free** "
+            "and does not require paying for any external services like SendGrid or Mailchimp. You can configure it to send alerts via your regular "
+            "free Gmail account.",
+            body_style
+        ))
+        story.append(Paragraph(
+            "<b>How to set up SMTP with a Free Gmail account:</b>", body_style
+        ))
+        story.append(Paragraph(
+            "• Step 1: Open your Google Account Settings (myaccount.google.com).<br/>"
+            "• Step 2: Go to Security -> 2-Step Verification and enable it.<br/>"
+            "• Step 3: Scroll down to the bottom of the 2-step verification page and click on 'App passwords'.<br/>"
+            "• Step 4: Create a new app password (select App='Other' and name it 'BharatAI'). Copy the 16-character code generated.<br/>"
+            "• Step 5: Put this 16-character code as the SMTP_PASSWORD in your <code>.env</code> file (spaces removed).",
+            bullet_style
+        ))
+        story.append(Spacer(1, 5))
+        
+        # Section 3: Configuration Variables (.env)
+        story.append(Paragraph("3. Configuration Settings (.env file)", h1_style))
+        story.append(Paragraph(
+            "To activate emails and options, create or edit the <code>.env</code> file in the repository root directory with the following variables:",
+            body_style
+        ))
+        story.append(Paragraph(
+            "SMTP_SERVER=smtp.gmail.com<br/>"
+            "SMTP_PORT=587<br/>"
+            "SMTP_USER=your_gmail@gmail.com<br/>"
+            "SMTP_PASSWORD=your_16_char_app_password<br/>"
+            "EMAIL_RECIPIENTS=recipient1@gmail.com,recipient2@gmail.com (global fallback list)<br/>"
+            "GEMINI_API_KEY=AIzaSy... (for Jarvis Gen AI consultation stories)",
+            code_style
+        ))
+        
+        # Section 4: Twice-Daily Scans Setup
+        story.append(Paragraph("4. Setting Up Twice-Daily Automatic Background Scans", h1_style))
+        story.append(Paragraph(
+            "To enable fully hands-free background updates on your system:",
+            body_style
+        ))
+        story.append(Paragraph(
+            "1. Locate the file <b><code>setup_task_scheduler.bat</code></b> in your folder.<br/>"
+            "2. Right-click on it and select <b>'Run as Administrator'</b>.<br/>"
+            "3. This will instantly install two Windows Tasks to run silently in the background:<br/>"
+            "   - <b>Morning Scan (10:00 AM IST)</b>: Runs as market opens to check pre-opening and early momentum.<br/>"
+            "   - <b>Closing Scan (04:00 PM IST)</b>: Runs after market closes to capture closing prices and check 200 SMA breaches.<br/>"
+            "4. If any stock triggers a breach, you will receive an instant Email Alert, a Windows Desktop Notification, and a siren sound beep.",
+            bullet_style
+        ))
+        
+        # Section 5: Multi-User Isolation & Database
+        story.append(Paragraph("5. Multi-User Isolation & SQLite Database", h1_style))
+        story.append(Paragraph(
+            "All settings, user accounts, and portfolios are stored locally inside the persistent SQLite database file (<code>bharat_ai_fund.db</code>). "
+            "This ensures that your holdings are completely separated from other users. You can switch between users (e.g. Gurjas, Sister, Dost) or edit "
+            "user email addresses directly in the sidebar panel.",
+            body_style
+        ))
+        
+        # Section 6: Scoring System Details
+        story.append(Paragraph("6. Simplified Page 1 Scoring & Bull Status", h1_style))
+        story.append(Paragraph(
+            "The Page 1 Leaderboard score is simplified to focus purely on business growth peak metrics, out of a maximum of <b>10 marks</b>:",
+            body_style
+        ))
+        story.append(Paragraph(
+            "• <b>Sales ATH (5 Marks)</b>: 5 points if the latest annual sales value is at an all-time high.<br/>"
+            "• <b>Profit ATH (5 Marks)</b>: 5 points if the latest annual profit value is at an all-time high.<br/>"
+            "• <b>Bull Badge (🐂)</b>: Awarded if the stock has a 10/10 score OR both Sales and Profit CAGRs are above 20%.<br/>"
+            "• <b>Double Bull Badge (🐂🐂)</b>: Awarded if the stock has a 10/10 score AND both CAGRs are above 20% (indicating supercharged breakout setup).",
+            bullet_style
+        ))
+        
+        doc.build(story)
+        return True
+    except Exception as e:
+        print(f"Error generating User Manual PDF: {str(e)}")
+        return False

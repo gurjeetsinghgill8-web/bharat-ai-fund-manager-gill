@@ -238,19 +238,19 @@ def generate_pdf_report(ranked_df, filename):
         
         story.append(PageBreak())
         
-        # Narrative Reports for Top Picks (Score >= 14)
-        top_picks = ranked_df[ranked_df["Total Score"] >= 14]
+        # Narrative Reports for Top Picks (Score == 10)
+        top_picks = ranked_df[ranked_df["Total Score"] == 10]
         if not top_picks.empty:
             story.append(Paragraph("Detailed Projections & Business Stories (Top Picks)", h1_style))
             story.append(Paragraph(
-                "The following stocks scored 14/20 or higher. Below are their simplified profiles, structural momentum stories, "
+                "The following stocks scored 10/10 (All-Time High Sales and Profits). Below are their simplified profiles, structural momentum stories, "
                 "and balance sheet setups.",
                 body_style
             ))
             story.append(Spacer(1, 10))
             
             for idx, row in top_picks.head(6).iterrows(): # Max 6 picks in narrative list to save pages
-                story.append(Paragraph(f"♦ {row['Ticker'].replace('.NS', '')} — Score: {row['Total Score']}/20", h1_style))
+                story.append(Paragraph(f"♦ {row['Ticker'].replace('.NS', '')} — Score: {row['Total Score']}/10", h1_style))
                 narrative_text = generate_stock_narrative(row["Ticker"], row)
                 story.append(Paragraph(narrative_text, body_style))
                 story.append(Spacer(1, 5))

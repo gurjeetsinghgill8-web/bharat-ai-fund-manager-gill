@@ -44,6 +44,7 @@ def init_db():
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT UNIQUE NOT NULL,
+                email TEXT,
                 created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
             );
 
@@ -81,6 +82,15 @@ def init_db():
             -- Insert default scan_meta row if not exists
             INSERT OR IGNORE INTO scan_meta (id) VALUES (1);
         """)
+        
+        # Auto-migration: check if email column exists in users table, if not, add it
+        try:
+            conn.execute("SELECT email FROM users LIMIT 1")
+        except sqlite3.OperationalError:
+            print("Running migration: Adding 'email' column to 'users' table...")
+            conn.execute("ALTER TABLE users ADD COLUMN email TEXT")
+            print("Migration successful.")
+            
         conn.commit()
     finally:
         conn.close()
@@ -90,7 +100,7 @@ def init_db():
 # USER MANAGEMENT
 # ---------------------------------------------------------------------------
 
-def create_user(name):
+def create_user(name, email=None):
     """
     Creates a new user profile. Returns the user_id.
     If user already exists, returns existing user_id.
@@ -100,20 +110,34 @@ def create_user(name):
         # Check if exists
         row = conn.execute("SELECT id FROM users WHERE name = ?", (name,)).fetchone()
         if row:
+            # Optionally update email if provided
+            if email is not None:
+                conn.execute("UPDATE users SET email = ? WHERE id = ?", (email, row["id"]))
+                conn.commit()
             return row["id"]
         
-        cursor = conn.execute("INSERT INTO users (name) VALUES (?)", (name,))
+        cursor = conn.execute("INSERT INTO users (name, email) VALUES (?, ?)", (name, email))
         conn.commit()
         return cursor.lastrowid
     finally:
         conn.close()
 
 
-def get_all_users():
-    """Returns list of all user dicts: [{"id": 1, "name": "Gurjas"}, ...]"""
+def update_user_email(user_id, email):
+    """Updates the email address of a user."""
     conn = get_connection()
     try:
-        rows = conn.execute("SELECT id, name, created_at FROM users ORDER BY id").fetchall()
+        conn.execute("UPDATE users SET email = ? WHERE id = ?", (email, user_id))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_all_users():
+    """Returns list of all user dicts: [{"id": 1, "name": "Gurjas", "email": "g@g.com"}, ...]"""
+    conn = get_connection()
+    try:
+        rows = conn.execute("SELECT id, name, email, created_at FROM users ORDER BY id").fetchall()
         return [dict(r) for r in rows]
     finally:
         conn.close()
@@ -123,7 +147,7 @@ def get_user_by_name(name):
     """Returns user dict or None."""
     conn = get_connection()
     try:
-        row = conn.execute("SELECT id, name, created_at FROM users WHERE name = ?", (name,)).fetchone()
+        row = conn.execute("SELECT id, name, email, created_at FROM users WHERE name = ?", (name,)).fetchone()
         return dict(row) if row else None
     finally:
         conn.close()

@@ -50,10 +50,10 @@ def execute_portfolio_sync():
         print("No users with portfolios found — skipping portfolio sync.")
         return
     
-    all_users = {u["id"]: u["name"] for u in get_all_users()}
+    all_users = {u["id"]: (u["name"], u.get("email")) for u in get_all_users()}
     
     for uid in user_ids:
-        user_name = all_users.get(uid, f"User #{uid}")
+        user_name, user_email = all_users.get(uid, (f"User #{uid}", None))
         portfolio = load_portfolio_db(uid)
         
         if not portfolio:
@@ -77,7 +77,7 @@ def execute_portfolio_sync():
                 already_emailed = h.get("_alert_emailed_date", "")
                 today_str = datetime.datetime.now().strftime("%Y-%m-%d")
                 if already_emailed != today_str:
-                    send_alert_email(h, user_name=user_name)
+                    send_alert_email(h, user_name=user_name, user_email=user_email)
                     h["_alert_emailed_date"] = today_str
             
             # Save updated alert dates

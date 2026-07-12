@@ -218,11 +218,11 @@ def show_desktop_notification(title, message):
     except Exception as e:
         print(f"Desktop notification error: {e}")
 
-def send_alert_email(holding, user_name=""):
+def send_alert_email(holding, user_name="", user_email=None):
     """
     Sends an instant alert email when a stock breaches below 200 SMA.
     Uses SMTP config from environment variables (same as email_dispatcher.py).
-    Now includes user name in the alert for multi-user support.
+    If user_email is provided, sends directly to them. Otherwise falls back to EMAIL_RECIPIENTS.
     """
     try:
         import smtplib
@@ -232,10 +232,12 @@ def send_alert_email(holding, user_name=""):
         smtp_port = int(os.getenv("SMTP_PORT", "587"))
         smtp_user = os.getenv("SMTP_USER", "")
         smtp_pass = os.getenv("SMTP_PASSWORD", "")
-        recipients = os.getenv("EMAIL_RECIPIENTS", "")
+        
+        # Use user-specific email if available, otherwise global config
+        recipients = user_email if user_email else os.getenv("EMAIL_RECIPIENTS", "")
         
         if not smtp_user or not smtp_pass or not recipients:
-            print("Email alert skipped: SMTP not configured")
+            print("Email alert skipped: SMTP or recipients not configured")
             return False
         
         sym = holding["symbol"].replace(".NS", "")
@@ -277,14 +279,14 @@ This is a strong signal that the trend has turned bearish.
             server.login(smtp_user, smtp_pass)
             server.send_message(msg)
         
-        print(f"Alert email sent for {sym} (user: {user_name})")
+        print(f"Alert email sent for {sym} to {recipients} (user: {user_name})")
         return True
         
     except Exception as e:
         print(f"Error sending alert email: {e}")
         return False
 
-def check_and_trigger_alerts(holdings, user_name=""):
+def check_and_trigger_alerts(holdings, user_name="", user_email=None):
     """
     Master alert trigger: checks all holdings and fires ALL alert types
     for any stock that is below 200 SMA.
@@ -313,7 +315,7 @@ def check_and_trigger_alerts(holdings, user_name=""):
             already_emailed_today = h.get("_alert_emailed_date", "")
             today_str = datetime.datetime.now().strftime("%Y-%m-%d")
             if already_emailed_today != today_str:
-                send_alert_email(h, user_name=user_name)
+                send_alert_email(h, user_name=user_name, user_email=user_email)
                 h["_alert_emailed_date"] = today_str
     
     return below_sma

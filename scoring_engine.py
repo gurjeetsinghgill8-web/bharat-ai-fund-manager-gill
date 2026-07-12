@@ -150,52 +150,32 @@ def score_stock(stock_data):
     eps = stock_data["eps"]
     debt_eq = stock_data["debt_to_equity"]
     
-    # 1. Price Momentum (5 Marks)
+    # 1. Price Momentum (5 Marks) - Excluded from Total Score per Gurjas's simplified logic
     price_score = 0
-    is_at_ath = current_price >= (0.975 * ath)
-    is_at_3y_high = current_price >= (0.975 * three_year_high)
-    if is_at_ath or is_at_3y_high:
-        price_score = 5
         
     # 2. Sales Performance (5 Marks)
     sales_score = 0
     latest_sales = sales_hist[0] if sales_hist else 0
     max_sales = max(sales_hist) if sales_hist else 0
     
-    if max_sales > 0:
-        if latest_sales >= (0.98 * max_sales): # ATH Sales
-            sales_score = 5
-        elif latest_sales >= (0.80 * max_sales): # within 10-20% drop from peak
-            sales_score = 3
-        else:
-            sales_score = 0
+    if max_sales > 0 and latest_sales >= (0.98 * max_sales): # ATH Sales
+        sales_score = 5
             
     # 3. Profit Performance (5 Marks)
     profit_score = 0
     latest_profit = profit_hist[0] if profit_hist else 0
     max_profit = max(profit_hist) if profit_hist else 0
     
-    if max_profit > 0:
-        if latest_profit >= (0.98 * max_profit): # ATH Profit
-            profit_score = 5
-        elif latest_profit >= (0.80 * max_profit): # within 10-20% drop from peak
-            profit_score = 3
-        else:
-            profit_score = 0
-
-    # 4. Latest Quarter Profit (2 Marks)
+    if max_profit > 0 and latest_profit >= (0.98 * max_profit): # ATH Profit
+        profit_score = 5
+ 
+    # 4. Latest Quarter Profit (2 Marks) - Excluded
     quarter_score = 0
-    latest_q_profit = quarterly_profits[0] if quarterly_profits else 0
-    max_q_profit = max(quarterly_profits) if quarterly_profits else 0
-    if max_q_profit > 0 and latest_q_profit >= (0.98 * max_q_profit):
-        quarter_score = 2
         
-    # 5. PE vs EPS Score (3 Marks)
+    # 5. PE vs EPS Score (3 Marks) - Excluded
     pe_eps_score = 0
-    if pe > 0 and eps > 0 and pe < eps:
-        pe_eps_score = 3
         
-    total_score = price_score + sales_score + profit_score + quarter_score + pe_eps_score
+    total_score = sales_score + profit_score
     
     # 6. Red Alert Check
     is_red_alert = False
@@ -361,7 +341,11 @@ def score_stock(stock_data):
         "Sales Growth Accelerating": sales_growth_accelerating,
         "Profit Growth Accelerating": profit_growth_accelerating,
         "CAGR Accelerating": cagr_accelerating,
-        "Is Above 200 SMA": is_above_200_sma
+        "Is Above 200 SMA": is_above_200_sma,
+        # --- BULL STATUS ---
+        "Bull Status": "🐂🐂 Double Bull" if ((sales_cagr_all is not None and sales_cagr_all > 20.0) and (profit_cagr_all is not None and profit_cagr_all > 20.0) and (sales_score == 5 and profit_score == 5)) else (
+            "🐂 Bull" if (((sales_cagr_all is not None and sales_cagr_all > 20.0) and (profit_cagr_all is not None and profit_cagr_all > 20.0)) or (sales_score == 5 and profit_score == 5)) else ""
+        )
     }
 
 def run_scoring(batch_data):

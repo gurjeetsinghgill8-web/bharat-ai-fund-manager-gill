@@ -287,10 +287,12 @@ if "current_user_id" not in st.session_state:
     if users:
         st.session_state["current_user_id"] = users[0]["id"]
         st.session_state["current_user_name"] = users[0]["name"]
+        st.session_state["current_user_email"] = users[0].get("email") or ""
     else:
         uid = create_user("Gurjas")
         st.session_state["current_user_id"] = uid
         st.session_state["current_user_name"] = "Gurjas"
+        st.session_state["current_user_email"] = ""
 
 # Load stock cache from SQLite (persistent!) — NOT empty dict
 if "stock_cache" not in st.session_state:
@@ -357,6 +359,7 @@ if user_names:
         if user_obj:
             st.session_state["current_user_id"] = user_obj["id"]
             st.session_state["current_user_name"] = user_obj["name"]
+            st.session_state["current_user_email"] = user_obj.get("email") or ""
             # Reload portfolio for new user
             st.session_state["portfolio"] = load_portfolio(user_id=user_obj["id"])
             st.session_state["portfolio_refreshed"] = False
@@ -369,9 +372,22 @@ st.sidebar.markdown(
     unsafe_allow_html=True
 )
 
+# Email address settings
+with st.sidebar.expander("📧 Alert Email Settings", expanded=False):
+    curr_email = st.session_state.get("current_user_email", "")
+    new_email = st.text_input("Alert Email", value=curr_email, placeholder="your_email@gmail.com", key="user_email_input")
+    if st.button("Save Email", key="save_email_btn"):
+        from db import update_user_email
+        uid = st.session_state.get("current_user_id")
+        update_user_email(uid, new_email.strip())
+        st.session_state["current_user_email"] = new_email.strip()
+        st.success("✅ Email updated successfully!")
+        st.rerun()
+
 # Create new user
 with st.sidebar.expander("➕ Add New User", expanded=False):
     new_user_name = st.text_input("Enter name", placeholder="e.g. Sister, Dost, Papa", key="new_user_input")
+    new_user_email = st.text_input("Enter email (optional)", placeholder="email@gmail.com", key="new_user_email_input")
     if st.button("Create User", key="create_user_btn"):
         if new_user_name and new_user_name.strip():
             clean_name = new_user_name.strip()
@@ -379,9 +395,11 @@ with st.sidebar.expander("➕ Add New User", expanded=False):
             if existing:
                 st.warning(f"'{clean_name}' already exists!")
             else:
-                uid = create_user(clean_name)
+                clean_email = new_user_email.strip() if new_user_email.strip() else None
+                uid = create_user(clean_name, email=clean_email)
                 st.session_state["current_user_id"] = uid
                 st.session_state["current_user_name"] = clean_name
+                st.session_state["current_user_email"] = clean_email or ""
                 st.session_state["portfolio"] = []
                 st.session_state["portfolio_refreshed"] = False
                 st.success(f"✅ User '{clean_name}' created!")
@@ -546,7 +564,7 @@ def render_portfolio_page(suffix="port"):
             st.session_state["portfolio"] = update_portfolio_prices(st.session_state["portfolio"], user_id=current_uid)
             st.session_state["portfolio_refreshed"] = True
             # Trigger all alert systems for stocks below 200 SMA
-            triggered = check_and_trigger_alerts(st.session_state["portfolio"], user_name=current_uname)
+            triggered = check_and_trigger_alerts(st.session_state["portfolio"], user_name=current_uname, user_email=st.session_state.get("current_user_email"))
             st.session_state["alert_stocks_triggered"] = [h["symbol"] for h in triggered]
             # Note: No st.rerun() here — WebSocket forward-msg cache misses on Streamlit Cloud.
             # The updated data is already in session_state and renders immediately.
@@ -633,7 +651,7 @@ def render_portfolio_page(suffix="port"):
         if st.button("🔄 Refresh Prices Now", use_container_width=True, key=f"{suffix}_port_refresh"):
             with st.spinner(f"Fetching latest prices for {current_uname}..."):
                 st.session_state["portfolio"] = update_portfolio_prices(st.session_state["portfolio"], user_id=current_uid)
-                triggered = check_and_trigger_alerts(st.session_state["portfolio"], user_name=current_uname)
+                triggered = check_and_trigger_alerts(st.session_state["portfolio"], user_name=current_uname, user_email=st.session_state.get("current_user_email"))
                 st.session_state["alert_stocks_triggered"] = [h["symbol"] for h in triggered]
             st.rerun()
     with col_r3:
@@ -666,7 +684,7 @@ def render_portfolio_page(suffix="port"):
         if below_sma_stocks:
             new_triggers = [h["symbol"] for h in below_sma_stocks if h["symbol"] not in st.session_state.get("alert_stocks_triggered", [])]
             if new_triggers:
-                triggered = check_and_trigger_alerts(below_sma_stocks)
+                triggered = check_and_trigger_alerts(below_sma_stocks, user_name=current_uname, user_email=st.session_state.get("current_user_email"))
                 st.session_state["alert_stocks_triggered"] = list(set(
                     st.session_state.get("alert_stocks_triggered", []) + [h["symbol"] for h in triggered]
                 ))
@@ -792,7 +810,7 @@ from symbols import get_all_categories
 selected_cap = st.sidebar.selectbox("Market Cap Universe", get_all_categories(use_full=use_full))
 
 if engine_page == "⚡ Page 1: Momentum & Breakout":
-    min_score = st.sidebar.slider("Minimum Quality Score", 0, 20, 10)
+    min_score = st.sidebar.slider("Minimum Quality Score", 0, 10, 5)
 elif engine_page == "🔍 Page 2: Value & 200 SMA":
     min_score = st.sidebar.slider("Minimum Quality Score", 0, 16, 8)
 else:
@@ -861,11 +879,11 @@ else:
             </div>
             """, unsafe_allow_html=True)
         with col2:
-            breakouts_count = len(df[df["Total Score"] >= 14])
+            breakouts_count = len(df[df["Total Score"] == 10])
             st.markdown(f"""
             <div class="metric-container">
                 <div class="metric-value" style="color: #00FF66; text-shadow: 0px 0px 8px rgba(0, 255, 102, 0.5);">{breakouts_count}</div>
-                <div class="metric-label">Breakout Targets (Score ≥ 14)</div>
+                <div class="metric-label">Breakout Targets (Score = 10)</div>
             </div>
             """, unsafe_allow_html=True)
         with col3:
@@ -908,7 +926,7 @@ else:
         
         # --- TAB 1: Ranked Leaderboard ---
         with tab1:
-            st.subheader("Equities Ranked by Multi-Factor Score (Max 20)")
+            st.subheader("Equities Ranked by Multi-Factor Score (Max 10)")
             st.write("Click on any row symbol in the dropdown below to trigger the Jarvis gen AI narrative breakdown.")
             
             # Display table — full visibility with 24-Star CAGR System
@@ -928,7 +946,7 @@ else:
             df_display["🔄 Turn Around"] = df_display["Turn Around"].map(
                 {True: "🔄 TA Story", False: ""})
             display_cols = [
-                "Ticker", "Exchange", "Sector", "Industry", "Category", "Price", "200 SMA", "200 SMA Dist %",
+                "Ticker", "Bull Status", "Exchange", "Sector", "Industry", "Category", "Price", "200 SMA", "200 SMA Dist %",
                 "Total Score", "Stars (Total)",
                 "Stars (Sales)", "Stars (Profit)", "Star Badge",
                 "Sales CAGR", "Sales CAGR 3Y", "Sales CAGR 5Y",

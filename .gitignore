@@ -25,6 +25,7 @@ jarvis_keys.txt
 
 # Local DB & logs
 *.db
+!bharat_ai_fund.db
 *.log
 nul
 

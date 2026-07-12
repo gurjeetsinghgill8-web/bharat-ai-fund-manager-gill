@@ -32,11 +32,22 @@ try:
 except Exception:
     _is_writeable = False
 
+import shutil
+
 if _is_writeable:
     DB_PATH = os.path.join(LOCAL_DIR, DB_NAME)
 else:
     # Fallback to writeable system temp folder for Streamlit Cloud
     DB_PATH = os.path.join(tempfile.gettempdir(), DB_NAME)
+    # If the temp database does not exist, copy the pre-populated database from the git repo
+    if not os.path.exists(DB_PATH):
+        _repo_db_path = os.path.join(LOCAL_DIR, DB_NAME)
+        if os.path.exists(_repo_db_path):
+            try:
+                shutil.copy2(_repo_db_path, DB_PATH)
+                print(f"Copied pre-populated database from {_repo_db_path} to {DB_PATH}")
+            except Exception as _e:
+                print(f"Error copying pre-populated database: {_e}")
 
 
 

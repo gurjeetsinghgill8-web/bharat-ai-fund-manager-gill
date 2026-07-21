@@ -355,19 +355,19 @@ if __name__ == "__main__":
         profit = result["profit"]
         
         if len(sales) >= 6:
-            cagr_5y = calculate_cagr_for_years(sales, 4)
-            cagr_3y = calculate_cagr_for_years(sales, 2)
+            cagr_3y = calculate_cagr_for_years(sales, 3)   # true 3-year CAGR
+            cagr_5y = calculate_cagr_for_years(sales, 5)   # true 5-year CAGR
             cagr_all = calculate_cagr(sales)
             print(f"\nSales CAGR All: {cagr_all:.2f}%" if cagr_all else "Sales CAGR All: N/A")
-            print(f"Sales CAGR 3Y: {cagr_3y:.2f}%" if cagr_3y else "Sales CAGR 3Y: N/A")
-            print(f"Sales CAGR 5Y: {cagr_5y:.2f}%" if cagr_5y else "Sales CAGR 5Y: N/A")
+            print(f"Sales CAGR 3Y:  {cagr_3y:.2f}%" if cagr_3y else "Sales CAGR 3Y: N/A")
+            print(f"Sales CAGR 5Y:  {cagr_5y:.2f}%" if cagr_5y else "Sales CAGR 5Y: N/A")
         
         if len(profit) >= 6:
-            pcagr_5y = calculate_cagr_for_years(profit, 4)
-            pcagr_3y = calculate_cagr_for_years(profit, 2)
+            pcagr_3y = calculate_cagr_for_years(profit, 3)  # true 3-year CAGR
+            pcagr_5y = calculate_cagr_for_years(profit, 5)  # true 5-year CAGR
             pcagr_all = calculate_cagr(profit)
             print(f"\nProfit CAGR All: {pcagr_all:.2f}%" if pcagr_all else "Profit CAGR All: N/A")
-            print(f"Profit CAGR 3Y: {pcagr_3y:.2f}%" if pcagr_3y else "Profit CAGR 3Y: N/A")
-            print(f"Profit CAGR 5Y: {pcagr_5y:.2f}%" if pcagr_5y else "Profit CAGR 5Y: N/A")
+            print(f"Profit CAGR 3Y:  {pcagr_3y:.2f}%" if pcagr_3y else "Profit CAGR 3Y: N/A")
+            print(f"Profit CAGR 5Y:  {pcagr_5y:.2f}%" if pcagr_5y else "Profit CAGR 5Y: N/A")
     else:
         print(f"Failed to fetch data for {test_ticker}")

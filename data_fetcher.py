@@ -153,6 +153,12 @@ def fetch_stock_data(ticker):
         inst_share = held_by_institutions * 100.0 if held_by_institutions <= 1.0 else held_by_institutions
         public_share = max(0.0, 100.0 - promoter_share - inst_share)
 
+        # Market Cap & PEG Ratio
+        market_cap = float(info.get('marketCap') or 0.0)
+        market_cap_cr = round(market_cap / 10_000_000.0, 2)
+        peg = info.get('pegRatio')
+        peg_ratio = float(peg) if peg is not None and str(peg) != 'None' and float(peg) > 0 else 0.0
+
         # Sector, Industry, Exchange
         sector = info.get('sector', "Unknown")
         industry = info.get('industry', "Unknown")
@@ -168,6 +174,9 @@ def fetch_stock_data(ticker):
             "quarterly_profits": quarterly_profits,
             "pe": pe,
             "eps": eps,
+            "market_cap": market_cap,
+            "market_cap_cr": market_cap_cr,
+            "peg_ratio": peg_ratio,
             "debt_to_equity": debt_to_equity,
             "debt": debt,
             "reserves": reserves,
@@ -181,7 +190,7 @@ def fetch_stock_data(ticker):
             "industry": industry,
             "exchange": exchange,
             "timestamp": datetime.datetime.now(),
-            "_cache_version": 3  # v3 = added sector, industry, exchange
+            "_cache_version": 4  # v4 = added market_cap_cr, peg_ratio
         }
         return data
     except Exception as e:

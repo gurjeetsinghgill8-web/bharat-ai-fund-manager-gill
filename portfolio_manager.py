@@ -523,15 +523,17 @@ def merge_portfolios(existing, imported):
     merged = list(existing)  # copy existing
     
     for h in imported:
-        if h["symbol"] in existing_syms:
+        sym = h["symbol"]
+        if sym in existing_syms:
             # Update existing holding
             for i, eh in enumerate(merged):
-                if eh["symbol"] == h["symbol"]:
+                if eh["symbol"] == sym:
                     merged[i].update(h)
                     break
         else:
             # Add new holding
             merged.append(h)
+            existing_syms.add(sym)
     
     return merged
 

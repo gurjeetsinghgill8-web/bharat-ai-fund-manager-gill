@@ -121,6 +121,23 @@ def init_db():
             print("Running migration: Adding 'email' column to 'users' table...")
             conn.execute("ALTER TABLE users ADD COLUMN email TEXT")
             print("Migration successful.")
+
+        # Auto-migration: Clean up any duplicate holdings and create unique index on portfolios(user_id, symbol)
+        try:
+            print("Running migration: Cleaning up duplicate portfolios entries...")
+            conn.execute("""
+                DELETE FROM portfolios 
+                WHERE id NOT IN (
+                    SELECT MIN(id) 
+                    FROM portfolios 
+                    GROUP BY user_id, symbol
+                )
+            """)
+            print("Running migration: Creating unique index on portfolios(user_id, symbol)...")
+            conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_portfolios_user_symbol ON portfolios(user_id, symbol)")
+            print("Unique index migration successful.")
+        except Exception as e:
+            print(f"Error during portfolios unique index migration: {e}")
             
         conn.commit()
     finally:
@@ -233,14 +250,20 @@ def load_portfolio_db(user_id):
 def save_portfolio_db(user_id, holdings):
     """
     Saves the entire portfolio for a user to SQLite.
-    Uses INSERT OR REPLACE to handle updates.
+    Deduplicates holdings by symbol to prevent UNIQUE constraint violations.
     """
     conn = get_connection()
     try:
         # Clear existing holdings for this user and re-insert
         conn.execute("DELETE FROM portfolios WHERE user_id = ?", (user_id,))
         
+        seen_symbols = set()
         for h in holdings:
+            sym = h["symbol"]
+            if sym in seen_symbols:
+                continue
+            seen_symbols.add(sym)
+            
             conn.execute("""
                 INSERT INTO portfolios 
                     (user_id, symbol, buy_price, quantity, ltp, sma_200, dist_pct, 
@@ -248,7 +271,7 @@ def save_portfolio_db(user_id, holdings):
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 user_id,
-                h["symbol"],
+                sym,
                 h["buy_price"],
                 h["quantity"],
                 h.get("ltp", 0.0),

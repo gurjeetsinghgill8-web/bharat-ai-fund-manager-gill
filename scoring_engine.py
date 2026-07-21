@@ -139,17 +139,25 @@ def _compute_peg_ratio(stock_data, pe, profit_cagr_3y, profit_cagr_5y, profit_ca
     Computes PEG Ratio = P/E / Profit Growth % (matching Screener.in definition).
     Prefers raw_peg if valid, else falls back to PE / 3Y Profit CAGR.
     """
-    raw_peg = stock_data.get("peg_ratio", 0.0)
-    if raw_peg and float(raw_peg) > 0:
-        return round(float(raw_peg), 2)
+    try:
+        raw_peg = stock_data.get("peg_ratio", 0.0)
+        if raw_peg and float(raw_peg) > 0:
+            return round(float(raw_peg), 2)
+    except Exception:
+        pass
     
-    if pe > 0:
+    try:
+        pe_val = float(pe) if (pe is not None and pe != "N/A" and pe != "-") else 0.0
+    except Exception:
+        pe_val = 0.0
+        
+    if pe_val > 0:
         if profit_cagr_3y is not None and profit_cagr_3y > 0:
-            return round(pe / profit_cagr_3y, 2)
+            return round(pe_val / profit_cagr_3y, 2)
         elif profit_cagr_5y is not None and profit_cagr_5y > 0:
-            return round(pe / profit_cagr_5y, 2)
+            return round(pe_val / profit_cagr_5y, 2)
         elif profit_cagr_all is not None and profit_cagr_all > 0:
-            return round(pe / profit_cagr_all, 2)
+            return round(pe_val / profit_cagr_all, 2)
     return 0.0
 
 
@@ -325,8 +333,8 @@ def score_stock(stock_data):
         "200 SMA Dist %": round(dist_pct, 2) if sma_200 else 0.0,
         "ATH": round(ath, 2),
         "3Y High": round(three_year_high, 2),
-        "PE": round(pe, 2),
-        "EPS": round(eps, 2),
+        "PE": round(float(pe), 2) if (isinstance(pe, (int, float)) or (isinstance(pe, str) and pe.replace('.', '', 1).isdigit())) else 0.0,
+        "EPS": round(float(eps), 2) if (isinstance(eps, (int, float)) or (isinstance(eps, str) and eps.replace('.', '', 1).isdigit())) else 0.0,
         "PEG Ratio": peg_ratio,
         "Market Cap (Cr)": market_cap_cr,
         "Price Score": price_score,

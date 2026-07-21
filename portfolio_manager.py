@@ -30,33 +30,60 @@ PORTFOLIO_FILE = "portfolio.json"
 # Portfolio CRUD (SQLite-backed, multi-user)
 # ---------------------------------------------------------------------------
 
+PORTFOLIO_STORE_FILE = "portfolio_store.json"
+
+def _save_json_backup(user_id, holdings):
+    """Saves a JSON backup of portfolios to survive Streamlit Cloud container wipes."""
+    try:
+        data = {}
+        if os.path.exists(PORTFOLIO_STORE_FILE):
+            try:
+                with open(PORTFOLIO_STORE_FILE, "r") as f:
+                    data = json.load(f)
+            except Exception:
+                data = {}
+        data[str(user_id)] = holdings
+        with open(PORTFOLIO_STORE_FILE, "w") as f:
+            json.dump(data, f, indent=2)
+    except Exception as e:
+        print(f"JSON backup write error: {e}")
+
+def _load_json_backup(user_id):
+    """Loads portfolio holdings from JSON backup if available."""
+    if not os.path.exists(PORTFOLIO_STORE_FILE):
+        return []
+    try:
+        with open(PORTFOLIO_STORE_FILE, "r") as f:
+            data = json.load(f)
+            return data.get(str(user_id), [])
+    except Exception as e:
+        print(f"JSON backup read error: {e}")
+        return []
+
 def load_portfolio(user_id=None):
     """
     Loads a user's portfolio from SQLite.
-    Returns a list of holding dicts, or an empty list if none exist.
-    Each holding:
-    {
-        "symbol": "RELIANCE.NS",
-        "buy_price": 2500.0,
-        "quantity": 10,
-        "ltp": 0.0,
-        "sma_200": 0.0,
-        "dist_pct": 0.0,
-        "above_sma": False,
-        "signal": "WAIT",
-        "last_updated": None
-    }
+    If SQLite DB returns empty (e.g. fresh container on Streamlit Cloud),
+    auto-restores from portfolio_store.json.
     """
     if user_id is None:
         return []
-    return load_portfolio_db(user_id)
+    holdings = load_portfolio_db(user_id)
+    if not holdings:
+        # Fallback to JSON store for container reboot survival
+        backup = _load_json_backup(user_id)
+        if backup:
+            save_portfolio_db(user_id, backup)
+            holdings = backup
+    return holdings
 
 
 def save_portfolio(holdings, user_id=None):
-    """Saves the portfolio to SQLite for a specific user."""
+    """Saves the portfolio to SQLite AND JSON backup for a specific user."""
     if user_id is None:
         return
     save_portfolio_db(user_id, holdings)
+    _save_json_backup(user_id, holdings)
 
 
 def add_holding(symbol, buy_price, quantity, user_id=None):
@@ -66,14 +93,18 @@ def add_holding(symbol, buy_price, quantity, user_id=None):
     """
     if user_id is None:
         return []
-    return add_holding_db(user_id, symbol, buy_price, quantity)
+    res = add_holding_db(user_id, symbol, buy_price, quantity)
+    _save_json_backup(user_id, res)
+    return res
 
 
 def remove_holding(symbol, user_id=None):
     """Removes a holding from the user's portfolio by symbol."""
     if user_id is None:
         return []
-    return remove_holding_db(user_id, symbol)
+    res = remove_holding_db(user_id, symbol)
+    _save_json_backup(user_id, res)
+    return res
 
 
 # ---------------------------------------------------------------------------

@@ -324,16 +324,32 @@ if "alert_stocks_triggered" not in st.session_state:
 
 # ------------------ SCAN MODE SELECTOR ------------------
 if "scan_mode" not in st.session_state:
-    st.session_state["scan_mode"] = "⚡ Core 127"
+    st.session_state["scan_mode"] = "🌐 Top 4000+ (All Stocks)"
 
 if "all_tickers" not in st.session_state:
-    st.session_state["all_tickers"] = get_all_tickers(use_full=False)
+    st.session_state["all_tickers"] = get_all_tickers(use_full=True, limit=4000)
 
 
 # ------------------ SIDEBAR ------------------
 st.sidebar.image("https://img.icons8.com/nolan/96/artificial-intelligence.png", width=90)
 st.sidebar.title("BHARAT AI GILL")
 st.sidebar.subheader("Jarvis Option/Fund Core v2.0")
+
+# ------------------ TOP NAVIGATION SELECTBOX (ZERO SCROLLING) ------------------
+st.sidebar.markdown("---")
+st.sidebar.markdown("🧭 **Navigation**")
+engine_page = st.sidebar.selectbox(
+    "Select Dashboard Page",
+    [
+        "📊 Page 1: Portfolio Dashboard",
+        "🔍 Page 2: GURJAS 1 Screener (Growth & DMA & PEG < 1.2)",
+        "🎯 Page 3: GURJAS 2 Screener (MidCap & PEG < 1.5)",
+        "⚡ Page 4: Momentum & Breakout",
+        "🏭 Page 5: Sectors & Industries"
+    ],
+    index=0,
+    key="top_nav_selectbox"
+)
 
 # ------------------ USER PROFILE SELECTOR ------------------
 st.sidebar.markdown("---")
@@ -477,7 +493,7 @@ default_idx = scan_mode_labels.index("🌐 Top 4000+ (All Stocks)")
 if "scan_mode" in st.session_state and st.session_state["scan_mode"] in UNIVERSE_PRESETS:
     default_idx = scan_mode_labels.index(st.session_state["scan_mode"])
 
-scan_mode = st.sidebar.radio(
+scan_mode = st.sidebar.selectbox(
     "Universe Size",
     scan_mode_labels,
     index=default_idx,
@@ -821,28 +837,16 @@ def render_portfolio_page(suffix="port"):
                 st.rerun()
 
 
-# Filter selections
-st.sidebar.markdown("---")
-engine_page = st.sidebar.radio("Navigation", [
-    "⚡ Page 1: Momentum & Breakout",
-    "🔍 Page 2: GURJAS 1 Screener (Growth & DMA & PEG < 1.2)",
-    "🎯 Page 3: GURJAS 2 Screener (MidCap & PEG < 1.5)",
-    "🏭 Page 4: Sectors & Industries",
-    "📊 Portfolio Dashboard"
-])
-
 use_full = selected_limit > 0
 st.sidebar.markdown("---")
 st.sidebar.write("⚙️ **Global Filter Options**")
 from symbols import get_all_categories
 selected_cap = st.sidebar.selectbox("Market Cap Universe", get_all_categories(use_full=use_full))
 
-if engine_page == "⚡ Page 1: Momentum & Breakout":
+if engine_page == "⚡ Page 4: Momentum & Breakout":
     min_score = st.sidebar.slider("Minimum Quality Score", 0, 10, 5)
-elif engine_page in ("🔍 Page 2: GURJAS 1 Screener (Growth & DMA & PEG < 1.2)", "🎯 Page 3: GURJAS 2 Screener (MidCap & PEG < 1.5)"):
-    min_score = 0
 else:
-    min_score = 0  # Not used for portfolio page
+    min_score = 0
 
 # Process active dataset
 df, latest_highs, continuous, red_alerts = pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
@@ -856,12 +860,18 @@ if st.session_state["stock_cache"]:
     if missing_sma:
         st.sidebar.warning("⚠️ Some cached data is missing 200 SMA. Run 'System Scan' in sidebar to update.")
 
-    if engine_page == "⚡ Page 1: Momentum & Breakout":
-        df, latest_highs, continuous, red_alerts = run_scoring(st.session_state["stock_cache"])
+    if engine_page == "📊 Page 1: Portfolio Dashboard":
+        pass
     elif engine_page == "🔍 Page 2: GURJAS 1 Screener (Growth & DMA & PEG < 1.2)":
         df, continuous, red_alerts = run_scoring_v2(st.session_state["stock_cache"])
         latest_highs = pd.DataFrame()
     elif engine_page == "🎯 Page 3: GURJAS 2 Screener (MidCap & PEG < 1.5)":
+        df, continuous, red_alerts = run_scoring_v3(st.session_state["stock_cache"])
+        latest_highs = pd.DataFrame()
+    elif engine_page == "⚡ Page 4: Momentum & Breakout":
+        df, latest_highs, continuous, red_alerts = run_scoring(st.session_state["stock_cache"])
+    elif engine_page == "🏭 Page 5: Sectors & Industries":
+        df, latest_highs, continuous, red_alerts = run_scoring(st.session_state["stock_cache"])
         df, continuous, red_alerts = run_scoring_v3(st.session_state["stock_cache"])
         latest_highs = pd.DataFrame()
     elif engine_page == "🏭 Page 4: Sectors & Industries":
@@ -926,7 +936,7 @@ if st.session_state.get("scanning_active", False):
             st.error(f"Scan failed: {e}")
             st.rerun()
 
-elif engine_page == "📊 Portfolio Dashboard":
+elif engine_page == "📊 Page 1: Portfolio Dashboard":
     _current_user = st.session_state.get("current_user_name", "")
     st.title(f"📊 {_current_user}'s PORTFOLIO MANAGER")
     st.markdown("### Personal Portfolio Tracker — Excel-Style Dashboard with Auto Signals & Alerts")
@@ -935,13 +945,13 @@ elif engine_page == "📊 Portfolio Dashboard":
     st.caption("💡 Switch users from the sidebar dropdown to manage different portfolios.")
     st.markdown("---")
     render_portfolio_page(suffix="dedicated")
-    
+
 elif not st.session_state["stock_cache"]:
     st.warning("No stock data cached. Please run a 'System Scan' in the left control panel to fetch fresh market parameters.")
 else:
-    if engine_page == "⚡ Page 1: Momentum & Breakout":
+    if engine_page == "⚡ Page 4: Momentum & Breakout":
         # Title and header
-        st.title("⚡ BHARAT AI FUND MANAGER GILL")
+        st.title("⚡ BHARAT AI MOMENTUM & BREAKOUT SCREENER")
         st.markdown("### Jarvis Autonomous Option/Equity Momentum Screener (v1.03 Upgrade — SMA Front + Turn Around Stars)")
         
         # 1. Metric Display Cards (Page 1)
@@ -1917,7 +1927,7 @@ else:
                     else:
                         st.error("Report generation failed. Check server logs.")
 
-    elif engine_page == "🏭 Page 4: Sectors & Industries":
+    elif engine_page == "🏭 Page 5: Sectors & Industries":
         
         if df.empty:
             st.warning("No stock data available. Run a scan first.")

@@ -46,7 +46,7 @@ def is_cache_fresh(filepath):
     age = datetime.datetime.now() - file_time
     return age.days < CACHE_EXPIRY_DAYS
 
-def fetch_stock_data(ticker):
+def fetch_stock_data(ticker, force_refresh=False):
     """
     Fetches raw stock data from yfinance and returns a structured dictionary.
     """
@@ -89,7 +89,7 @@ def fetch_stock_data(ticker):
         
         # Try screeners.in first for reliable CAGR data
         # Cache is checked internally — no network call if cached
-        screener_result = fetch_screener_data(ticker)
+        screener_result = fetch_screener_data(ticker, force_refresh=force_refresh)
         
         if screener_result["success"] and len(screener_result["sales"]) >= 5:
             sales_history = screener_result["sales"]

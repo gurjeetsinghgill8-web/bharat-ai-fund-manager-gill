@@ -446,9 +446,9 @@ def score_stock_v2(stock_data):
     Page 2: GURJAS 1 Screener — Screener.in Exact Match
     Criteria (ALL 8 must pass — AND logic):
       - Sales growth 3Years > 20
-      - Sales growth 5Years > 20
+      - Sales growth 5Years > 20 (or 3Y fallback if 5Y not available)
       - Profit growth 3Years > 20
-      - Profit growth 5Years > 20
+      - Profit growth 5Years > 20 (or 3Y fallback if 5Y not available)
       - Profit growth (latest YoY/TTM) > 20
       - Sales growth (latest YoY/TTM) > 20
       - DMA 200 < Current price  (price > 200 SMA)
@@ -456,11 +456,23 @@ def score_stock_v2(stock_data):
     """
     res = score_stock(stock_data)
     s_3y = res.get("Sales CAGR 3Y", 0.0)
-    s_5y = res.get("Sales CAGR 5Y", 0.0)
+    s_5y = res.get("Sales CAGR 5Y")
+    if s_5y is None or s_5y == 0.0:
+        s_5y = s_3y
+        
     p_3y = res.get("Profit CAGR 3Y", 0.0)
-    p_5y = res.get("Profit CAGR 5Y", 0.0)
+    p_5y = res.get("Profit CAGR 5Y")
+    if p_5y is None or p_5y == 0.0:
+        p_5y = p_3y
+
     s_latest = res.get("Sales Growth", 0.0)    # Screener.in "Sales growth"
+    if s_latest is None or s_latest == 0.0:
+        s_latest = s_3y
+        
     p_latest = res.get("Profit Growth", 0.0)   # Screener.in "Profit growth"
+    if p_latest is None or p_latest == 0.0:
+        p_latest = p_3y
+
     peg = res.get("PEG Ratio", 0.0)
     is_above_sma = res.get("Is Above 200 SMA", False)
 
@@ -483,7 +495,7 @@ def score_stock_v3(stock_data):
     Page 3: GURJAS 2 Screener — Screener.in Exact Match
     Criteria (ALL 7 must pass — AND logic):
       - Sales growth 3Years > 10
-      - Sales growth 5Years > 10
+      - Sales growth 5Years > 10 (or 3Y fallback if 5Y not available)
       - Profit growth 3Years > 10
       - Sales growth (latest YoY/TTM) > 20
       - Profit growth (latest YoY/TTM) > 20
@@ -492,10 +504,19 @@ def score_stock_v3(stock_data):
     """
     res = score_stock(stock_data)
     s_3y = res.get("Sales CAGR 3Y", 0.0)
-    s_5y = res.get("Sales CAGR 5Y", 0.0)
+    s_5y = res.get("Sales CAGR 5Y")
+    if s_5y is None or s_5y == 0.0:
+        s_5y = s_3y
+
     p_3y = res.get("Profit CAGR 3Y", 0.0)
     s_latest = res.get("Sales Growth", 0.0)    # Screener.in "Sales growth"
+    if s_latest is None or s_latest == 0.0:
+        s_latest = s_3y
+
     p_latest = res.get("Profit Growth", 0.0)   # Screener.in "Profit growth"
+    if p_latest is None or p_latest == 0.0:
+        p_latest = p_3y
+
     mcap = res.get("Market Cap (Cr)", 0.0)
     peg = res.get("PEG Ratio", 0.0)
 

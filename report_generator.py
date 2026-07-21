@@ -285,18 +285,18 @@ def generate_stock_narrative_v2(ticker, row_data):
     Generates a simple, engaging, 10th-grade reading level profile narrative for Page 2.
     """
     company_name = ticker.replace(".NS", "")
-    price = row_data["Price"]
-    score = row_data["Total Score"]
-    pe = row_data["PE"]
-    eps = row_data["EPS"]
-    debt = row_data["Debt/Equity"]
-    reserves = row_data["Reserves"]
-    promoters = row_data["Promoter %"]
-    inst = row_data["Institution %"]
-    sales_cagr = row_data["Sales CAGR"]
-    profit_cagr = row_data["Profit CAGR"]
-    sma_200 = row_data["200 SMA"]
-    dist_pct = row_data["200 SMA Dist %"]
+    price = row_data.get("Price", 0)
+    score = row_data.get("Total Score", 0)
+    pe = row_data.get("PE", 0)
+    eps = row_data.get("EPS", 0)
+    debt = row_data.get("Debt/Equity", 0)
+    reserves = row_data.get("Reserves", 0)
+    promoters = row_data.get("Promoter %", 0)
+    inst = row_data.get("Institution %", 0)
+    sales_cagr = row_data.get("Sales CAGR", 0)
+    profit_cagr = row_data.get("Profit CAGR", 0)
+    sma_200 = row_data.get("200 SMA", 0)
+    dist_pct = row_data.get("200 SMA Dist %", 0)
     value_fit = row_data.get("Value Fit", row_data.get("PE vs EPS Score", 0) > 0)
     cagr_accel = row_data.get("CAGR Accelerating", False)
     

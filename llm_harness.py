@@ -350,19 +350,41 @@ def generate_ai_narrative_v2(ticker, row_data):
     if not provider:
         return generate_stock_narrative_v2(ticker, row_data)
 
+    price = row_data.get('Price', 0)
+    sma_200 = row_data.get('200 SMA', 0)
+    dist_pct = row_data.get('200 SMA Dist %', 0)
+    total_score = row_data.get('Total Score', 0)
+    pe = row_data.get('PE', 0)
+    eps = row_data.get('EPS', 0)
+    debt = row_data.get('Debt/Equity', 0)
+    reserves = row_data.get('Reserves', 0)
+    promoters = row_data.get('Promoter %', 0)
+    inst = row_data.get('Institution %', 0)
+    pub = row_data.get('Public %', 0)
+    sales_cagr = row_data.get('Sales CAGR', 0)
+    profit_cagr = row_data.get('Profit CAGR', 0)
+    cagr_accel = row_data.get('CAGR Accelerating', False)
+    value_fit = row_data.get('Value Fit', pe < eps if (pe and eps) else False)
+
     prompt = f"""
     Analyze the following stock metrics and write an investment narrative in a simple, engaging, 10th-grade reading level.
     The goal is to explain why this stock is a good value/momentum entry candidate and any potential risks.
     This stock passes our 200 SMA filter (meaning it trades above its 200-day simple moving average).
     
     Company Ticker: {ticker.replace('.NS', '')}
-    Growth Accelerating (CAGR 3Y > CAGR 5Y & Overall CAGR > CAGR 3Y): {'Yes' if row_data.get('CAGR Accelerating', False) else 'No'}
-    Value Fit (PE < EPS): {'Yes' if row_data['Value Fit'] else 'No'}
-    PE Ratio: {row_data['PE']}
-    Earnings Per Share (EPS): {row_data['EPS']}
-    Debt-to-Equity Ratio: {row_data['Debt/Equity']}
-    Reserves: ₹{row_data['Reserves']} Crores
-    Shareholding Pattern: Promoter={row_data['Promoter %']}%, Institutions={row_data['Institution %']}%, Public={row_data['Public %']}%
+    Current Price: ₹{price}
+    200-day Moving Average (200 SMA): ₹{sma_200}
+    Distance from 200 SMA: {dist_pct}% (lower distance is better for entry)
+    Total Score: {total_score}
+    Sales CAGR: {sales_cagr}% (3Y: {row_data.get('Sales CAGR 3Y', 0)}%, 5Y: {row_data.get('Sales CAGR 5Y', 0)}%)
+    Profit CAGR: {profit_cagr}% (3Y: {row_data.get('Profit CAGR 3Y', 0)}%, 5Y: {row_data.get('Profit CAGR 5Y', 0)}%)
+    Growth Accelerating: {'Yes' if cagr_accel else 'No'}
+    Value Fit (PE < EPS): {'Yes' if value_fit else 'No'}
+    PE Ratio: {pe}
+    Earnings Per Share (EPS): {eps}
+    Debt-to-Equity Ratio: {debt}
+    Reserves: ₹{reserves} Crores
+    Shareholding Pattern: Promoter={promoters}%, Institutions={inst}%, Public={pub}%
     
     Instructions:
     1. Keep it under 150 words.

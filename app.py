@@ -750,16 +750,57 @@ def render_portfolio_page(suffix="port"):
                     st.session_state.get("alert_stocks_triggered", []) + [h["symbol"] for h in triggered]
                 ))
             
+            import urllib.parse
             for h in below_sma_stocks:
                 sym_display = h["symbol"].replace(".NS", "")
-                for _ in range(3):
-                    st.markdown(f"""
-                    <div class="portfolio-alert-box">
-                        🚨🚨 CRITICAL ALERT: {sym_display} is BELOW 200 SMA! EXIT IMMEDIATELY! 🚨🚨<br/>
-                        LTP: ₹{h['ltp']} | 200 SMA: ₹{h['sma_200']} | Distance: {h['dist_pct']}%<br/>
-                        <small>You bought at ₹{h['buy_price']} × {h['quantity']} shares</small>
+                ltp = h['ltp']
+                sma = h['sma_200']
+                dist = h['dist_pct']
+                buy_price = h['buy_price']
+                qty = h['quantity']
+                
+                msg_text = f"🚨 *BHARAT AI CRITICAL ALERT*: {sym_display} is BELOW 200 SMA! EXIT IMMEDIATELY!\nLTP: ₹{ltp} | 200 SMA: ₹{sma} | Distance: {dist}%\nBought: ₹{buy_price} × {qty} qty"
+                wa_url = f"https://api.whatsapp.com/send?text={urllib.parse.quote(msg_text)}"
+                tg_url = f"https://t.me/share/url?url={urllib.parse.quote('https://bharat-ai-fund-manager-gill-mkvrfrz3yhk4xtladm3jza.streamlit.app/')}&text={urllib.parse.quote(msg_text)}"
+                
+                st.markdown(f"""
+                <div style="background: linear-gradient(135deg, #FF0055 0%, #990033 100%); color: white; padding: 18px; border-radius: 12px; font-weight: bold; margin-bottom: 15px; box-shadow: 0 4px 15px rgba(255, 0, 85, 0.4);">
+                    <span style="font-size: 20px;">🚨🚨 CRITICAL ALERT: {sym_display} IS BELOW 200 SMA! EXIT IMMEDIATELY! 🚨🚨</span><br/>
+                    <div style="font-size: 15px; margin-top: 8px; font-weight: normal;">
+                        LTP: <b>₹{ltp}</b> | 200 SMA: <b>₹{sma}</b> | Distance: <b>{dist}%</b><br/>
+                        Purchased: <b>₹{buy_price} × {qty} shares</b>
                     </div>
-                    """, unsafe_allow_html=True)
+                    <div style="margin-top: 14px;">
+                        <a href="{wa_url}" target="_blank" style="background-color: #25D366; color: white; padding: 8px 16px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block; margin-right: 10px; box-shadow: 0 2px 6px rgba(0,0,0,0.3);">💬 1-Click WhatsApp Alert</a>
+                        <a href="{tg_url}" target="_blank" style="background-color: #0088cc; color: white; padding: 8px 16px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block; box-shadow: 0 2px 6px rgba(0,0,0,0.3);">📢 1-Click Telegram Alert</a>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+            # Auto Web Audio Alarm Sound
+            st.components.v1.html("""
+                <script>
+                    try {
+                        var ctx = new (window.AudioContext || window.webkitAudioContext)();
+                        function playBeep(freq, duration, delay) {
+                            setTimeout(function() {
+                                var osc = ctx.createOscillator();
+                                var gain = ctx.createGain();
+                                osc.type = 'sawtooth';
+                                osc.frequency.value = freq;
+                                gain.gain.value = 0.3;
+                                osc.connect(gain);
+                                gain.connect(ctx.destination);
+                                osc.start();
+                                osc.stop(ctx.currentTime + duration);
+                            }, delay);
+                        }
+                        playBeep(880, 0.2, 0);
+                        playBeep(660, 0.2, 250);
+                        playBeep(880, 0.3, 500);
+                    } catch(e) {}
+                </script>
+            """, height=0)
         
         # ---- Excel-Style Portfolio Table ----
         st.markdown("#### 📋 Your Holdings — Excel Dashboard View")

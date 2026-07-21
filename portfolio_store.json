@@ -1,0 +1,58 @@
+{
+  "1": [
+    {
+      "symbol": "BSE.NS",
+      "buy_price": 3800.0,
+      "quantity": 10,
+      "ltp": 3686.4,
+      "sma_200": 3120.61,
+      "dist_pct": 18.13,
+      "above_sma": true,
+      "signal": "HOLD",
+      "signal_strength": 3,
+      "last_updated": "2026-07-21 10:49",
+      "_alert_emailed_date": ""
+    },
+    {
+      "symbol": "RELIANCE.NS",
+      "buy_price": 2400.0,
+      "quantity": 5,
+      "ltp": 1315.6,
+      "sma_200": 1408.07,
+      "dist_pct": -6.57,
+      "above_sma": false,
+      "signal": "EXIT",
+      "signal_strength": 3,
+      "last_updated": "2026-07-21 10:49",
+      "_alert_emailed_date": ""
+    }
+  ],
+  "2": [
+    {
+      "symbol": "BSE.NS",
+      "buy_price": 3800.0,
+      "quantity": 10,
+      "ltp": 3686.4,
+      "sma_200": 3120.61,
+      "dist_pct": 18.13,
+      "above_sma": true,
+      "signal": "HOLD",
+      "signal_strength": 3,
+      "last_updated": "2026-07-21 10:49",
+      "_alert_emailed_date": ""
+    },
+    {
+      "symbol": "RELIANCE.NS",
+      "buy_price": 2400.0,
+      "quantity": 5,
+      "ltp": 1315.6,
+      "sma_200": 1408.07,
+      "dist_pct": -6.57,
+      "above_sma": false,
+      "signal": "EXIT",
+      "signal_strength": 3,
+      "last_updated": "2026-07-21 10:49",
+      "_alert_emailed_date": ""
+    }
+  ]
+}

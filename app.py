@@ -281,18 +281,23 @@ if "users_initialized" not in st.session_state:
         create_user("Gurjas")
     st.session_state["users_initialized"] = True
 
+default_email = os.getenv("EMAIL_RECIPIENTS", os.getenv("SMTP_USER", ""))
+if not default_email or "your_email" in default_email or "recipient" in default_email:
+    default_email = "gurjeetsinghgill8@gmail.com"
+
 # Current user tracking
 if "current_user_id" not in st.session_state:
     users = get_all_users()
     if users:
         st.session_state["current_user_id"] = users[0]["id"]
         st.session_state["current_user_name"] = users[0]["name"]
-        st.session_state["current_user_email"] = users[0].get("email") or ""
+        user_email = users[0].get("email") or default_email
+        st.session_state["current_user_email"] = user_email
     else:
-        uid = create_user("Gurjas")
+        uid = create_user("Gurjas", email=default_email)
         st.session_state["current_user_id"] = uid
         st.session_state["current_user_name"] = "Gurjas"
-        st.session_state["current_user_email"] = ""
+        st.session_state["current_user_email"] = default_email
 
 # Initialize scanning state
 if "scanning_active" not in st.session_state:
@@ -394,15 +399,33 @@ st.sidebar.markdown(
 
 # Email address settings
 with st.sidebar.expander("📧 Alert Email Settings", expanded=False):
-    curr_email = st.session_state.get("current_user_email", "")
+    curr_email = st.session_state.get("current_user_email", "") or default_email
     new_email = st.text_input("Alert Email", value=curr_email, placeholder="your_email@gmail.com", key="user_email_input")
-    if st.button("Save Email", key="save_email_btn"):
-        from db import update_user_email
-        uid = st.session_state.get("current_user_id")
-        update_user_email(uid, new_email.strip())
-        st.session_state["current_user_email"] = new_email.strip()
-        st.success("✅ Email updated successfully!")
-        st.rerun()
+    col_em1, col_em2 = st.columns(2)
+    with col_em1:
+        if st.button("Save Email", key="save_email_btn", use_container_width=True):
+            from db import update_user_email
+            uid = st.session_state.get("current_user_id")
+            update_user_email(uid, new_email.strip())
+            st.session_state["current_user_email"] = new_email.strip()
+            st.success("✅ Email saved!")
+            st.rerun()
+    with col_em2:
+        if st.button("⚡ Test Email", key="test_alert_email_btn", use_container_width=True):
+            from portfolio_manager import send_alert_email
+            test_holding = {
+                "symbol": "RELIANCE.NS",
+                "ltp": 1315.6,
+                "sma_200": 1408.07,
+                "dist_pct": -6.57,
+                "buy_price": 2400.0,
+                "quantity": 5
+            }
+            res = send_alert_email(test_holding, user_name=st.session_state.get("current_user_name"), user_email=new_email.strip())
+            if res:
+                st.success(f"✅ Alert sent to {new_email.strip()}!")
+            else:
+                st.info("💡 To send live Gmail alerts, set `SMTP_USER` and `SMTP_PASSWORD` app password in `.env` or Streamlit Cloud Secrets.")
 
 # Create new user
 with st.sidebar.expander("➕ Add New User", expanded=False):

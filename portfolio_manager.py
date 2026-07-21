@@ -55,7 +55,13 @@ def _load_json_backup(user_id):
     try:
         with open(PORTFOLIO_STORE_FILE, "r") as f:
             data = json.load(f)
-            return data.get(str(user_id), [])
+            if str(user_id) in data and data[str(user_id)]:
+                return data[str(user_id)]
+            # Fallback to any non-empty portfolio in JSON backup
+            for k, v in data.items():
+                if v:
+                    return v
+            return []
     except Exception as e:
         print(f"JSON backup read error: {e}")
         return []

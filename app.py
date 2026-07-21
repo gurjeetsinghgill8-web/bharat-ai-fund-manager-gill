@@ -11,7 +11,7 @@ from data_fetcher import (
     get_stock_data, batch_update_stocks, batch_update_stocks_parallel,
     save_scan_results_to_db, load_cached_scan_from_db
 )
-from scoring_engine import run_scoring, score_stock, run_scoring_v2, score_stock_v2
+from scoring_engine import run_scoring, score_stock, run_scoring_v2, score_stock_v2, run_scoring_v3, score_stock_v3
 from sector_industry import (
     compute_nse_sectors, compute_bse_sectors, compute_all_sectors,
     compute_nse_industries, compute_bse_industries, compute_all_industries,
@@ -468,11 +468,12 @@ st.sidebar.write("⚡ **Control Center**")
 # Universe size presets
 UNIVERSE_PRESETS = {"⚡ Core 127": 0, "🌐 Top 50": 50, "🌐 Top 100": 100, 
                     "🌐 Top 200": 200, "🌐 Top 500": 500, "🌐 Top 1000": 1000,
-                    "🌐 Top 2000": 2000, "🌐 Top 3000+": 3000}
+                    "🌐 Top 2000": 2000, "🌐 Top 3000+": 3000, "🌐 Top 4000+ (All Stocks)": 4000}
 
 # Scan mode toggle with presets
 scan_mode_labels = list(UNIVERSE_PRESETS.keys())
-default_idx = 0
+# Default to 4000+ All Stocks for maximum screener coverage
+default_idx = scan_mode_labels.index("🌐 Top 4000+ (All Stocks)")
 if "scan_mode" in st.session_state and st.session_state["scan_mode"] in UNIVERSE_PRESETS:
     default_idx = scan_mode_labels.index(st.session_state["scan_mode"])
 
@@ -480,7 +481,7 @@ scan_mode = st.sidebar.radio(
     "Universe Size",
     scan_mode_labels,
     index=default_idx,
-    help="Select how many stocks to scan. Larger = more comprehensive but slower."
+    help="4000+ All Stocks recommended for GURJAS screeners. More stocks = more matches!"
 )
 
 # Get the limit value for this preset
@@ -809,7 +810,13 @@ def render_portfolio_page(suffix="port"):
 
 # Filter selections
 st.sidebar.markdown("---")
-engine_page = st.sidebar.radio("Navigation", ["⚡ Page 1: Momentum & Breakout", "🔍 Page 2: Value & 200 SMA", "📊 Portfolio Dashboard", "🏭 Page 3: Sectors & Industries"])
+engine_page = st.sidebar.radio("Navigation", [
+    "⚡ Page 1: Momentum & Breakout",
+    "🔍 Page 2: GURJAS 1 Screener (Growth & DMA & PEG < 1.2)",
+    "🎯 Page 3: GURJAS 2 Screener (MidCap & PEG < 1.5)",
+    "🏭 Page 4: Sectors & Industries",
+    "📊 Portfolio Dashboard"
+])
 
 use_full = selected_limit > 0
 st.sidebar.markdown("---")
@@ -819,8 +826,8 @@ selected_cap = st.sidebar.selectbox("Market Cap Universe", get_all_categories(us
 
 if engine_page == "⚡ Page 1: Momentum & Breakout":
     min_score = st.sidebar.slider("Minimum Quality Score", 0, 10, 5)
-elif engine_page == "🔍 Page 2: Value & 200 SMA":
-    min_score = st.sidebar.slider("Minimum Quality Score", 0, 16, 8)
+elif engine_page in ("🔍 Page 2: GURJAS 1 Screener (Growth & DMA & PEG < 1.2)", "🎯 Page 3: GURJAS 2 Screener (MidCap & PEG < 1.5)"):
+    min_score = 0
 else:
     min_score = 0  # Not used for portfolio page
 
@@ -838,10 +845,13 @@ if st.session_state["stock_cache"]:
 
     if engine_page == "⚡ Page 1: Momentum & Breakout":
         df, latest_highs, continuous, red_alerts = run_scoring(st.session_state["stock_cache"])
-    elif engine_page == "🔍 Page 2: Value & 200 SMA":
+    elif engine_page == "🔍 Page 2: GURJAS 1 Screener (Growth & DMA & PEG < 1.2)":
         df, continuous, red_alerts = run_scoring_v2(st.session_state["stock_cache"])
         latest_highs = pd.DataFrame()
-    elif engine_page == "🏭 Page 3: Sectors & Industries":
+    elif engine_page == "🎯 Page 3: GURJAS 2 Screener (MidCap & PEG < 1.5)":
+        df, continuous, red_alerts = run_scoring_v3(st.session_state["stock_cache"])
+        latest_highs = pd.DataFrame()
+    elif engine_page == "🏭 Page 4: Sectors & Industries":
         df, latest_highs, continuous, red_alerts = run_scoring(st.session_state["stock_cache"])
     else:
         # Portfolio Dashboard — no scoring needed
@@ -855,7 +865,8 @@ if st.session_state["stock_cache"]:
         continuous = continuous[continuous["Category"] == selected_cap] if not continuous.empty else continuous
         red_alerts = red_alerts[red_alerts["Category"] == selected_cap] if not red_alerts.empty else red_alerts
         
-    df = df[df["Total Score"] >= min_score] if not df.empty else df
+    if "Total Score" in df.columns and min_score > 0:
+        df = df[df["Total Score"] >= min_score] if not df.empty else df
 
 # ------------------ MAIN SCREEN ------------------
 if st.session_state.get("scanning_active", False):
@@ -998,7 +1009,7 @@ else:
             df_display["🔄 Turn Around"] = df_display["Turn Around"].map(
                 {True: "🔄 TA Story", False: ""})
             display_cols = [
-                "Ticker", "Bull Status", "Exchange", "Sector", "Industry", "Category", "Price", "200 SMA", "200 SMA Dist %",
+                "Ticker", "Bull Status", "Exchange", "Sector", "Industry", "Category", "Price", "PEG Ratio", "Market Cap (Cr)", "200 SMA", "200 SMA Dist %",
                 "Total Score", "Stars (Total)",
                 "Stars (Sales)", "Stars (Profit)", "Star Badge",
                 "Sales CAGR", "Sales CAGR 3Y", "Sales CAGR 5Y",
@@ -1007,11 +1018,32 @@ else:
                 "🔄 Turn Around",
                 "CAGR Accelerating"
             ]
+            display_cols = [c for c in display_cols if c in df_display.columns]
             st.dataframe(
                 df_display[display_cols],
                 use_container_width=True,
                 height=min(600, 35 * len(df_display) + 40)
             )
+
+            # --- DIAGNOSTIC EXPANDER: Why Page 1 vs Screener.in differs ---
+            with st.expander("🔍 **Why does Page 1 stock list differ from Screener.in queries? (Click to view detailed analysis)**"):
+                st.markdown("""
+                ### 📊 Diagnostic Analysis: Page 1 vs Screener.in Queries
+                
+                1. **Multi-Factor Ranking vs Hard Boolean Filters**:
+                   - **Page 1 (Momentum & Breakout)** ranks stocks by a multi-factor score and 24-Star CAGR rating across all listed stocks.
+                   - **Screener.in (GURJAS 1 & 2)** uses strict boolean `AND` filters (e.g. `Sales CAGR 3Y > 20% AND Profit CAGR 5Y > 20% AND PEG < 1.2`).
+                   - Stocks that miss one threshold (e.g. PEG = 1.25) still appear on Page 1 if their momentum is strong, but are filtered out on Page 2/3.
+
+                2. **Universe Pool Size**:
+                   - If sidebar is set to **`⚡ Core 127`**, only 127 hand-picked stocks are scanned.
+                   - Screener.in searches all **4000+** listed NSE & BSE companies.
+                   - 💡 *To match Screener.in completely across the entire Indian stock market, select **`🌐 Top 4000+ (All Stocks)`** in the sidebar control center!*
+
+                3. **PEG Ratio Calculation Standard**:
+                   - Formula: `PEG Ratio = P/E / 3Yr Profit Growth %`.
+                   - Our system calculates exact PEG Ratios matching Screener.in using 10+ years of financial data from Screener scraper.
+                """)
             
             st.markdown("---")
             st.subheader("🤖 Gen AI Jarvis Stock Diagnostic Report")
@@ -1258,58 +1290,43 @@ else:
                     else:
                         st.error("Report generation failed. Check server logs.")
 
-    elif engine_page == "🔍 Page 2: Value & 200 SMA":
+    elif engine_page == "🔍 Page 2: GURJAS 1 Screener (Growth & DMA & PEG < 1.2)":
         # Page 2 — Title and header
-        st.title("🛡️ BHARAT AI VALUE & 200 SMA SCREENER")
-        st.markdown("### Jarvis Proximity & CAGR Value Engine (v1.03 Upgrade)")
+        st.title("🔍 BHARAT AI GURJAS 1 SCREENER")
+        st.markdown("### Screener.in Exact Match Engine — Sales/Profit 3Y/5Y/Overall > 20% + DMA 200 < Price + PEG Ratio < 1.2")
+        
+        st.markdown("""
+        <div style="background: rgba(2, 132, 199, 0.1); border-left: 5px solid #0284C7; padding: 12px 18px; border-radius: 6px; margin-bottom: 20px;">
+            <b>🎯 GURJAS 1 Parameters (Exact Screener.in Match — ALL 8 conditions AND):</b><br/>
+            • <b>Sales Growth 3Y</b> &gt; 20% &nbsp;&nbsp;|&nbsp;&nbsp; • <b>Sales Growth 5Y</b> &gt; 20% &nbsp;&nbsp;|&nbsp;&nbsp; • <b>Sales Growth Overall</b> &gt; 20%<br/>
+            • <b>Profit Growth 3Y</b> &gt; 20% &nbsp;&nbsp;|&nbsp;&nbsp; • <b>Profit Growth 5Y</b> &gt; 20% &nbsp;&nbsp;|&nbsp;&nbsp; • <b>Profit Growth Overall</b> &gt; 20%<br/>
+            • <b>📊 DMA 200 &lt; Current Price</b> (Stock must be ABOVE 200 SMA) &nbsp;&nbsp;|&nbsp;&nbsp; • <b>PEG Ratio</b> &lt; 1.2 (P/E ÷ 3Y Profit CAGR)
+        </div>
+        """, unsafe_allow_html=True)
         
         # 1. Metric Display Cards
+        g1_matches = len(df[df["Gurjas1 Pass"] == True]) if (not df.empty and "Gurjas1 Pass" in df.columns) else 0
         star_stocks = len(df[df["Total Star Rating"] >= 12]) if not df.empty else 0
+        avg_peg = df[df["PEG Ratio"] > 0]["PEG Ratio"].mean() if (not df.empty and "PEG Ratio" in df.columns) else 0.0
+        
         col1, col2, col3, col4, col5 = st.columns(5)
         with col1:
-            st.markdown(f"""
-            <div class="metric-container">
-                <div class="metric-value">{len(all_tickers)}</div>
-                <div class="metric-label">Universe Pool</div>
-            </div>
-            """, unsafe_allow_html=True)
+            st.markdown(f"""<div class="metric-container"><div class="metric-value">{len(all_tickers)}</div><div class="metric-label">Universe Pool</div></div>""", unsafe_allow_html=True)
         with col2:
-            picks_count = len(df[df["Total Score"] >= 11]) if not df.empty else 0
-            st.markdown(f"""
-            <div class="metric-container">
-                <div class="metric-value" style="color: #00FF66; text-shadow: 0px 0px 8px rgba(0, 255, 102, 0.5);">{picks_count}</div>
-                <div class="metric-label">Value Targets (Score ≥ 11/16)</div>
-            </div>
-            """, unsafe_allow_html=True)
+            st.markdown(f"""<div class="metric-container"><div class="metric-value" style="color: #00FF66; text-shadow: 0px 0px 8px rgba(0, 255, 102, 0.5);">{g1_matches}</div><div class="metric-label">GURJAS 1 Targets</div></div>""", unsafe_allow_html=True)
         with col3:
-            st.markdown(f"""
-            <div class="metric-container">
-                <div class="metric-value" style="color: #FFD700; text-shadow: 0px 0px 8px rgba(255, 215, 0, 0.5);">⭐⭐⭐ {star_stocks}</div>
-                <div class="metric-label">Star Stocks (3★ CAGR + Score)</div>
-            </div>
-            """, unsafe_allow_html=True)
+            st.markdown(f"""<div class="metric-container"><div class="metric-value" style="color: #FFD700; text-shadow: 0px 0px 8px rgba(255, 215, 0, 0.5);">⭐⭐⭐ {star_stocks}</div><div class="metric-label">Star Stocks (≥12 Stars)</div></div>""", unsafe_allow_html=True)
         with col4:
-            avg_dist = df["200 SMA Dist %"].mean() if not df.empty else 0.0
-            st.markdown(f"""
-            <div class="metric-container">
-                <div class="metric-value" style="color: #FFC900; text-shadow: 0px 0px 8px rgba(255, 201, 0, 0.5);">{round(avg_dist, 2)}%</div>
-                <div class="metric-label">Avg Distance to 200 SMA</div>
-            </div>
-            """, unsafe_allow_html=True)
+            st.markdown(f"""<div class="metric-container"><div class="metric-value" style="color: #008DDA;">{round(avg_peg, 2) if avg_peg else 'N/A'}</div><div class="metric-label">Avg PEG Ratio</div></div>""", unsafe_allow_html=True)
         with col5:
             alerts_count = len(red_alerts)
-            st.markdown(f"""
-            <div class="metric-container">
-                <div class="metric-value" style="color: #FF0055; text-shadow: 0px 0px 8px rgba(255, 0, 85, 0.5);">{alerts_count}</div>
-                <div class="metric-label">Blacklisted/Red Alert</div>
-            </div>
-            """, unsafe_allow_html=True)
+            st.markdown(f"""<div class="metric-container"><div class="metric-value" style="color: #FF0055;">{alerts_count}</div><div class="metric-label">Blacklisted/Red Alert</div></div>""", unsafe_allow_html=True)
             
         st.markdown("<br/>", unsafe_allow_html=True)
 
-	        # 2. Main Tabbed Windows (Page 2)
+        # 2. Main Tabbed Windows (Page 2)
         tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
-            "🏆 Value & SMA Leaderboard", 
+            "🏆 GURJAS 1 Leaderboard", 
             "📈 Sustained momentum", 
             "🚨 Red Alert Blacklist",
             "💬 Jarvis AI Consultant",
@@ -1320,26 +1337,19 @@ else:
         
         # --- TAB 1: Ranked Leaderboard ---
         with tab1:
-            st.subheader("Equities Filtered by 200 SMA & Ranked by Value/Growth Score (Max 16)")
+            st.subheader("Equities Ranked by GURJAS 1 Screener Criteria (Sorted by PEG Ratio)")
             st.write("Click on any row symbol in the dropdown below to trigger the Jarvis gen AI narrative breakdown.")
             
-            # Sort option
-            sort_by = st.selectbox("Leaderboard Sorting", ["Closest to 200 SMA (Value/Momentum Entry)", "Highest Quality Score (Out of 16)"])
-            if sort_by == "Closest to 200 SMA (Value/Momentum Entry)":
-                df = df.sort_values(by="200 SMA Dist %", ascending=True)
-            else:
-                df = df.sort_values(by="Total Score", ascending=False)
-                
-            # Display table — full visibility with 24-Star CAGR System
-            display_cols = [
-                "Ticker", "Exchange", "Sector", "Industry", "Category", "Price", "200 SMA", "200 SMA Dist %",
-                "Total Score", "Stars (Total)",
-                "Sales CAGR", "Sales CAGR 3Y", "Sales CAGR 5Y",
-                "Profit CAGR", "Profit CAGR 3Y", "Profit CAGR 5Y",
-                "Sales+Profit CAGR Total"
-            ]
-            display_df = df.copy() if not df.empty else pd.DataFrame(columns=display_cols)
+            display_df = df.copy() if not df.empty else pd.DataFrame()
             if not display_df.empty:
+                display_df["Match Status"] = display_df["Gurjas1 Pass"].map({True: "✅ PERFECT MATCH", False: "⚠️ Near Match"})
+                display_cols = [
+                    "Ticker", "Match Status", "PEG Ratio", "Market Cap (Cr)", "Price", "200 SMA", "200 SMA Dist %",
+                    "Sales CAGR 3Y", "Sales CAGR 5Y", "Sales CAGR",
+                    "Profit CAGR 3Y", "Profit CAGR 5Y", "Profit CAGR",
+                    "PE", "Stars (Total)", "Sector", "Category"
+                ]
+                display_cols = [c for c in display_cols if c in display_df.columns]
                 display_df = display_df[display_cols]
                 
             st.dataframe(
@@ -1349,25 +1359,24 @@ else:
             )
             
             st.markdown("---")
-            st.subheader("🤖 Gen AI Jarvis Stock Diagnostic Report (Value Mode)")
+            st.subheader("🤖 Gen AI Jarvis Stock Diagnostic Report (GURJAS 1 Mode)")
             selected_ticker = st.selectbox("Select Ticker for Diagnostic", df["Ticker"].tolist() if not df.empty else ["None"], key="p2_diag_tk")
             
             if selected_ticker and selected_ticker != "None":
                 stock_data = st.session_state["stock_cache"][selected_ticker]
                 row_data = df[df["Ticker"] == selected_ticker].iloc[0]
                 
-                is_double_ath = row_data["Sales Score"] == 5 and row_data["Profit Score"] == 5
-                if not is_double_ath:
+                is_g1_match = row_data.get("Gurjas1 Pass", False)
+                if not is_g1_match:
                     st.markdown("""
                     <div style="margin-bottom: 15px; background-color: rgba(239, 68, 68, 0.2); border: 2px solid #EF4444; color: #B91C1C; padding: 15px; border-radius: 10px; font-weight: bold;">
-                        ⚠️ ALERT: Chhoti-Moti Gadbad Detected! This stock does NOT have both sales and profits at All-Time Highs.
-                        (Sales Score: {}/5 | Profit Score: {}/5)
+                        ⚠️ ALERT: This stock does not satisfy all 7 GURJAS 1 parameters (Growth > 20% & PEG < 1.2).
                     </div>
-                    """.format(int(row_data["Sales Score"]), int(row_data["Profit Score"])), unsafe_allow_html=True)
+                    """, unsafe_allow_html=True)
                 else:
                     st.markdown("""
                     <div style="margin-bottom: 15px; background-color: rgba(16, 185, 129, 0.2); border: 2px solid #10B981; color: #065F46; padding: 15px; border-radius: 10px; font-weight: bold;">
-                        ✅ PERFECT: Double All-Time High Peak (Sales & Profits are at historical peaks).
+                        ✅ PERFECT: Full GURJAS 1 Screener Match! High Growth + PEG < 1.2.
                     </div>
                     """, unsafe_allow_html=True)
                 
@@ -1390,47 +1399,27 @@ else:
                         st.plotly_chart(fig, use_container_width=True)
                 
                 with col_right:
-                    st.markdown("#### CAGR Acceleration")
-                    cagr_accel = row_data.get("CAGR Accelerating", False)
-                    if cagr_accel:
-                        st.success("✅ Sales & Profit Growth Accelerating")
-                    else:
-                        st.warning("⚠️ Growth not accelerating")
+                    st.markdown("#### Key Valuation & CAGR Metrics")
+                    st.metric("PEG Ratio", f"{row_data.get('PEG Ratio', 0.0)}")
+                    st.metric("Market Cap (Cr)", f"₹{row_data.get('Market Cap (Cr)', 0.0):,.1f} Cr")
+                    st.metric("P/E Ratio", f"{row_data.get('PE', 0.0)}")
+                    
                     c1, c2 = st.columns(2)
                     with c1:
-                        st.metric("Sales CAGR", f'{row_data.get("Sales CAGR", 0):.1f}%')
                         st.metric("Sales CAGR 3Y", f'{row_data.get("Sales CAGR 3Y", 0):.1f}%')
                         st.metric("Sales CAGR 5Y", f'{row_data.get("Sales CAGR 5Y", 0):.1f}%')
                     with c2:
-                        st.metric("Profit CAGR", f'{row_data.get("Profit CAGR", 0):.1f}%')
                         st.metric("Profit CAGR 3Y", f'{row_data.get("Profit CAGR 3Y", 0):.1f}%')
                         st.metric("Profit CAGR 5Y", f'{row_data.get("Profit CAGR 5Y", 0):.1f}%')
-                    
-                    st.markdown("---")
-                    st.markdown("#### Balance Sheet & Holders")
-                    st.metric("Debt-to-Equity Ratio", f"{row_data['Debt/Equity']}")
-                    st.metric("Reserves (Cr)", f"₹{row_data['Reserves']} Cr")
-                    
-                    shareholding_data = {
-                        "Holder": ["Promoter", "Institutions", "Public"],
-                        "Share %": [row_data["Promoter %"], row_data["Institution %"], row_data["Public %"]]
-                    }
-                    pie_df = pd.DataFrame(shareholding_data)
-                    fig_pie = px.pie(
-                        pie_df, 
-                        values="Share %", 
-                        names="Holder", 
-                        color_discrete_sequence=['#0B192C', '#008DDA', '#FFCCD5'],
-                        template="plotly_white"
-                    )
-                    st.plotly_chart(fig_pie, use_container_width=True)
 
         # --- TAB 2: Sustained Momentum ---
         with tab2:
             st.subheader("📈 Sustained High Momentum Performers")
             st.write("These stocks have successfully consolidated near their recent highs over 1, 2, or 6 months without breaking structure.")
             if not continuous.empty:
-                st.dataframe(continuous[["Ticker", "Category", "Price", "Total Score", "Momentum Status"]], use_container_width=True)
+                display_cont_cols = ["Ticker", "Category", "Price", "PEG Ratio", "Market Cap (Cr)", "Momentum Status"]
+                display_cont_cols = [c for c in display_cont_cols if c in continuous.columns]
+                st.dataframe(continuous[display_cont_cols], use_container_width=True)
             else:
                 st.info("No sustained momentum stocks found matching filters.")
 
@@ -1442,7 +1431,7 @@ else:
                 for idx, row in red_alerts.iterrows():
                     st.markdown(f"""
                     <div class="red-alert-card" style="margin-bottom: 10px;">
-                        <strong>{row['Ticker'].replace('.NS', '')}</strong> ({row['Category']}) | Total Score: {row['Total Score']}/16<br/>
+                        <strong>{row['Ticker'].replace('.NS', '')}</strong> ({row['Category']}) | Total Score: {row.get('Total Score', 'N/A')}<br/>
                         ⚠️ Alerts Flagged: <em>{row['Red Reasons']}</em><br/>
                         Debt/Equity: {row['Debt/Equity']} | Reserves: ₹{row['Reserves']} Cr
                     </div>
@@ -1452,8 +1441,8 @@ else:
 
         # --- TAB 4: Jarvis AI Chat Consultant ---
         with tab4:
-            st.subheader("💬 Discuss Markets with Jarvis (Value Mode)")
-            st.write("Ask Jarvis to compare stocks, explain value logic, or discuss 200 SMA setups.")
+            st.subheader("💬 Discuss Markets with Jarvis (GURJAS 1 Mode)")
+            st.write("Ask Jarvis to compare stocks, explain growth & PEG ratio setups.")
             
             if not has_active_api_key():
                 st.error("Jarvis Brain Offline. Please add a valid Google Gemini API key to `api_key.txt` or `.env` to start chatting!")
@@ -1487,8 +1476,8 @@ else:
 
         # --- TAB 5: Backtesting Simulator ---
         with tab5:
-            st.subheader("🧪 Portfolio Backtesting Simulator (Value Mode)")
-            st.write("Evaluate how a portfolio of Page 2 value-momentum stocks performed compared to Nifty.")
+            st.subheader("🧪 Portfolio Backtesting Simulator (GURJAS 1 Mode)")
+            st.write("Evaluate how a portfolio of GURJAS 1 growth stocks performed compared to Nifty.")
             
             years = st.slider("Backtest Period (Years)", 1, 3, 2, key="p2_backtest_yr")
             
@@ -1527,7 +1516,7 @@ else:
                 st.dataframe(bt_df, use_container_width=True)
                 
                 comparison_df = pd.DataFrame({
-                    "Engine": ["Bharat AI Value Engine", "Nifty 50 Index"],
+                    "Engine": ["Bharat AI GURJAS 1 Engine", "Nifty 50 Index"],
                     "Cumulative Return %": [avg_ret, nifty_mock_return]
                 })
                 fig_compare = px.bar(
@@ -1549,8 +1538,8 @@ else:
 
         # --- TAB 7: Newsletter Dispatcher (Page 2) ---
         with tab7:
-            st.subheader("📧 Newsletter & SMTP Mailing Engine (Value Mode)")
-            st.write("Configure email updates to be delivered to subscribers with attached PDF & Excel sheets representing Value/SMA picks.")
+            st.subheader("📧 Newsletter & SMTP Mailing Engine (GURJAS 1 Mode)")
+            st.write("Configure email updates to be delivered to subscribers with attached PDF & Excel sheets representing GURJAS 1 picks.")
             
             smtp_user = os.getenv("SMTP_USER") or "Not Configured"
             smtp_server = os.getenv("SMTP_SERVER")
@@ -1565,10 +1554,10 @@ else:
             
             st.markdown("---")
             st.write("#### Manual Newsletter Trigger")
-            if st.button("Generate Value Reports & Dispatch Newsletter", key="p2_mail_trigger"):
+            if st.button("Generate GURJAS 1 Reports & Dispatch Newsletter", key="p2_mail_trigger"):
                 with st.spinner("Compiling PDF and Excel dossier files..."):
-                    pdf_name = "Bharat_AI_Gill_Value_Report.pdf"
-                    excel_name = "Bharat_AI_Gill_Value_Data.xlsx"
+                    pdf_name = "Bharat_AI_Gill_Gurjas1_Report.pdf"
+                    excel_name = "Bharat_AI_Gill_Gurjas1_Data.xlsx"
                     pdf_path = os.path.join("reports", pdf_name)
                     excel_path = os.path.join("reports", excel_name)
                     
@@ -1576,7 +1565,7 @@ else:
                     excel_ok = generate_excel_report_v2(df, continuous, red_alerts, excel_name)
                     
                     if pdf_ok and excel_ok:
-                        st.success("Value Reports generated successfully!")
+                        st.success("GURJAS 1 Reports generated successfully!")
                         
                         st.write("Attempting SMTP delivery...")
                         date_str = datetime.datetime.now().strftime("%d %B %Y")
@@ -1590,12 +1579,296 @@ else:
                     else:
                         st.error("Report generation failed. Check server logs.")
 
-    else:
-        # ============================================================
-        # PAGE 3: SECTORS & INDUSTRIES DASHBOARD
-        # ============================================================
-        st.title("🏭 BHARAT AI SECTOR & INDUSTRY DASHBOARD")
-        st.markdown("### NSE & BSE Sector/Industry Performance Rankings — Side by Side")
+    elif engine_page == "🎯 Page 3: GURJAS 2 Screener (MidCap & PEG < 1.5)":
+        # Page 3 — Title and header
+        st.title("🎯 BHARAT AI GURJAS 2 SCREENER")
+        st.markdown("### Screener.in Exact Match Engine — Sales/Profit > 20%, Market Cap > ₹1,000 Cr & PEG < 1.5")
+        
+        st.markdown("""
+        <div style="background: rgba(16, 185, 129, 0.1); border-left: 5px solid #10B981; padding: 12px 18px; border-radius: 6px; margin-bottom: 20px;">
+            <b>🎯 GURJAS 2 Parameters (Exact Screener.in Match):</b><br/>
+            • <b>Sales Growth 3Y</b> > 10% &nbsp;&nbsp;|&nbsp;&nbsp; • <b>Sales Growth 5Y</b> > 10% &nbsp;&nbsp;|&nbsp;&nbsp; • <b>Sales Growth Overall</b> > 20%<br/>
+            • <b>Profit Growth Overall</b> > 20% &nbsp;&nbsp;|&nbsp;&nbsp; • <b>Profit Growth 3Y</b> > 10% &nbsp;&nbsp;|&nbsp;&nbsp; • <b>Market Capitalization</b> > ₹1,000 Cr<br/>
+            • <b>PEG Ratio</b> &lt; 1.5 (P/E ÷ 3Y Profit CAGR)
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # 1. Metric Display Cards
+        g2_matches = len(df[df["Gurjas2 Pass"] == True]) if (not df.empty and "Gurjas2 Pass" in df.columns) else 0
+        star_stocks = len(df[df["Total Star Rating"] >= 12]) if not df.empty else 0
+        avg_peg = df[df["PEG Ratio"] > 0]["PEG Ratio"].mean() if (not df.empty and "PEG Ratio" in df.columns) else 0.0
+        
+        col1, col2, col3, col4, col5 = st.columns(5)
+        with col1:
+            st.markdown(f"""<div class="metric-container"><div class="metric-value">{len(all_tickers)}</div><div class="metric-label">Universe Pool</div></div>""", unsafe_allow_html=True)
+        with col2:
+            st.markdown(f"""<div class="metric-container"><div class="metric-value" style="color: #00FF66; text-shadow: 0px 0px 8px rgba(0, 255, 102, 0.5);">{g2_matches}</div><div class="metric-label">GURJAS 2 Targets</div></div>""", unsafe_allow_html=True)
+        with col3:
+            st.markdown(f"""<div class="metric-container"><div class="metric-value" style="color: #FFD700; text-shadow: 0px 0px 8px rgba(255, 215, 0, 0.5);">⭐⭐⭐ {star_stocks}</div><div class="metric-label">Star Stocks (≥12 Stars)</div></div>""", unsafe_allow_html=True)
+        with col4:
+            st.markdown(f"""<div class="metric-container"><div class="metric-value" style="color: #008DDA;">{round(avg_peg, 2) if avg_peg else 'N/A'}</div><div class="metric-label">Avg PEG Ratio</div></div>""", unsafe_allow_html=True)
+        with col5:
+            alerts_count = len(red_alerts)
+            st.markdown(f"""<div class="metric-container"><div class="metric-value" style="color: #FF0055;">{alerts_count}</div><div class="metric-label">Blacklisted/Red Alert</div></div>""", unsafe_allow_html=True)
+            
+        st.markdown("<br/>", unsafe_allow_html=True)
+
+        # 2. Main Tabbed Windows (Page 3)
+        tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+            "🏆 GURJAS 2 Leaderboard", 
+            "📈 Sustained momentum", 
+            "🚨 Red Alert Blacklist",
+            "💬 Jarvis AI Consultant",
+            "🧪 Backtesting Simulator",
+            "📊 My Portfolio",
+            "📧 Newsletter Dispatcher"
+        ])
+        
+        # --- TAB 1: Ranked Leaderboard ---
+        with tab1:
+            st.subheader("Equities Ranked by GURJAS 2 Screener Criteria (Sorted by PEG Ratio)")
+            st.write("Click on any row symbol in the dropdown below to trigger the Jarvis gen AI narrative breakdown.")
+            
+            display_df = df.copy() if not df.empty else pd.DataFrame()
+            if not display_df.empty:
+                display_df["Match Status"] = display_df["Gurjas2 Pass"].map({True: "✅ PERFECT MATCH", False: "⚠️ Near Match"})
+                display_cols = [
+                    "Ticker", "Match Status", "PEG Ratio", "Market Cap (Cr)", "Price", "200 SMA", "200 SMA Dist %",
+                    "Sales CAGR 3Y", "Sales CAGR 5Y", "Sales CAGR",
+                    "Profit CAGR 3Y", "Profit CAGR 5Y", "Profit CAGR",
+                    "PE", "Stars (Total)", "Sector", "Category"
+                ]
+                display_cols = [c for c in display_cols if c in display_df.columns]
+                display_df = display_df[display_cols]
+                
+            st.dataframe(
+                display_df,
+                use_container_width=True,
+                height=min(600, 35 * len(display_df) + 40)
+            )
+            
+            st.markdown("---")
+            st.subheader("🤖 Gen AI Jarvis Stock Diagnostic Report (GURJAS 2 Mode)")
+            selected_ticker = st.selectbox("Select Ticker for Diagnostic", df["Ticker"].tolist() if not df.empty else ["None"], key="p3_diag_tk")
+            
+            if selected_ticker and selected_ticker != "None":
+                stock_data = st.session_state["stock_cache"][selected_ticker]
+                row_data = df[df["Ticker"] == selected_ticker].iloc[0]
+                
+                is_g2_match = row_data.get("Gurjas2 Pass", False)
+                if not is_g2_match:
+                    st.markdown("""
+                    <div style="margin-bottom: 15px; background-color: rgba(239, 68, 68, 0.2); border: 2px solid #EF4444; color: #B91C1C; padding: 15px; border-radius: 10px; font-weight: bold;">
+                        ⚠️ ALERT: This stock does not satisfy all GURJAS 2 parameters (Market Cap > 1000 Cr & PEG < 1.5).
+                    </div>
+                    """, unsafe_allow_html=True)
+                else:
+                    st.markdown("""
+                    <div style="margin-bottom: 15px; background-color: rgba(16, 185, 129, 0.2); border: 2px solid #10B981; color: #065F46; padding: 15px; border-radius: 10px; font-weight: bold;">
+                        ✅ PERFECT: Full GURJAS 2 Screener Match! Market Cap > ₹1000 Cr + PEG < 1.5.
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                col_left, col_right = st.columns([2, 1])
+                with col_left:
+                    st.markdown(f"#### Diagnostic: {selected_ticker.replace('.NS', '')}")
+                    
+                    with st.spinner("Jarvis is writing business story..."):
+                        narrative = generate_ai_narrative_v2(selected_ticker, row_data)
+                    st.info(narrative)
+                    
+                    hist_prices = stock_data["price_history_6m"]
+                    if hist_prices:
+                        fig = go.Figure()
+                        fig.add_trace(go.Scatter(y=hist_prices, name="Price", line=dict(color='#008DDA')))
+                        sma_val = row_data["200 SMA"]
+                        if sma_val > 0:
+                            fig.add_trace(go.Scatter(y=[sma_val]*len(hist_prices), name="200 SMA", line=dict(color='#FF0055', dash='dash')))
+                        fig.update_layout(title=f"{selected_ticker.replace('.NS', '')} - Price vs 200 SMA Level", template="plotly_white")
+                        st.plotly_chart(fig, use_container_width=True)
+                
+                with col_right:
+                    st.markdown("#### Key Valuation & CAGR Metrics")
+                    st.metric("PEG Ratio", f"{row_data.get('PEG Ratio', 0.0)}")
+                    st.metric("Market Cap (Cr)", f"₹{row_data.get('Market Cap (Cr)', 0.0):,.1f} Cr")
+                    st.metric("P/E Ratio", f"{row_data.get('PE', 0.0)}")
+                    
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        st.metric("Sales CAGR 3Y", f'{row_data.get("Sales CAGR 3Y", 0):.1f}%')
+                        st.metric("Sales CAGR 5Y", f'{row_data.get("Sales CAGR 5Y", 0):.1f}%')
+                    with c2:
+                        st.metric("Profit CAGR 3Y", f'{row_data.get("Profit CAGR 3Y", 0):.1f}%')
+                        st.metric("Profit CAGR 5Y", f'{row_data.get("Profit CAGR 5Y", 0):.1f}%')
+
+        # --- TAB 2: Sustained Momentum ---
+        with tab2:
+            st.subheader("📈 Sustained High Momentum Performers")
+            st.write("These stocks have successfully consolidated near their recent highs over 1, 2, or 6 months without breaking structure.")
+            if not continuous.empty:
+                display_cont_cols = ["Ticker", "Category", "Price", "PEG Ratio", "Market Cap (Cr)", "Momentum Status"]
+                display_cont_cols = [c for c in display_cont_cols if c in continuous.columns]
+                st.dataframe(continuous[display_cont_cols], use_container_width=True)
+            else:
+                st.info("No sustained momentum stocks found matching filters.")
+
+        # --- TAB 3: Red Alert Blacklist ---
+        with tab3:
+            st.subheader("🚨 Deteriorating Fundamentals / Excessive Risk Blacklist")
+            st.write("These stocks have been flagged due to weak operating profiles, high debt structures, or falling reserves.")
+            if not red_alerts.empty:
+                for idx, row in red_alerts.iterrows():
+                    st.markdown(f"""
+                    <div class="red-alert-card" style="margin-bottom: 10px;">
+                        <strong>{row['Ticker'].replace('.NS', '')}</strong> ({row['Category']}) | Total Score: {row.get('Total Score', 'N/A')}<br/>
+                        ⚠️ Alerts Flagged: <em>{row['Red Reasons']}</em><br/>
+                        Debt/Equity: {row['Debt/Equity']} | Reserves: ₹{row['Reserves']} Cr
+                    </div>
+                    """, unsafe_allow_html=True)
+            else:
+                st.success("Excellent! No stocks in your watchlist are currently triggering red-alert flags.")
+
+        # --- TAB 4: Jarvis AI Chat Consultant ---
+        with tab4:
+            st.subheader("💬 Discuss Markets with Jarvis (GURJAS 2 Mode)")
+            st.write("Ask Jarvis to compare stocks, explain midcap growth & PEG ratio setups.")
+            
+            if not has_active_api_key():
+                st.error("Jarvis Brain Offline. Please add a valid Google Gemini API key to `api_key.txt` or `.env` to start chatting!")
+                st.info("💡 You can get a free API Key in under 30 seconds at [Google AI Studio](https://aistudio.google.com).")
+            else:
+                for role, text in st.session_state["chat_messages"]:
+                    div_class = "chat-bubble-jarvis" if role == "Jarvis" else "chat-bubble-user"
+                    st.markdown(f"""
+                    <div class="{div_class}">
+                        <strong>{role}:</strong><br/>
+                        {text}
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                user_input = st.chat_input("Talk to Jarvis (e.g. Compare CDSL vs BSE...)", key="p3_chat_in")
+                if user_input:
+                    st.session_state["chat_messages"].append(("User", user_input))
+                    st.markdown(f"""
+                    <div class="chat-bubble-user">
+                        <strong>User:</strong><br/>
+                        {user_input}
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    with st.spinner("Jarvis is thinking..."):
+                        chat_hist_tuples = st.session_state["chat_messages"][:-1]
+                        jarvis_reply = discuss_with_jarvis(user_input, chat_hist_tuples, df, page_mode="page_2")
+                        
+                    st.session_state["chat_messages"].append(("Jarvis", jarvis_reply))
+                    st.rerun()
+
+        # --- TAB 5: Backtesting Simulator ---
+        with tab5:
+            st.subheader("🧪 Portfolio Backtesting Simulator (GURJAS 2 Mode)")
+            st.write("Evaluate how a portfolio of GURJAS 2 midcap growth stocks performed compared to Nifty.")
+            
+            years = st.slider("Backtest Period (Years)", 1, 3, 2, key="p3_backtest_yr")
+            
+            backtest_results = []
+            nifty_mock_return = 12.0 * years
+            
+            for ticker, data in st.session_state["stock_cache"].items():
+                hist_prices = data.get("price_history_5y", data.get("price_history_6m", []))
+                price_len = len(hist_prices)
+                days_ago = years * 250
+                if price_len > days_ago:
+                    old_price = hist_prices[-days_ago]
+                    curr_price = hist_prices[-1]
+                    if old_price > 0:
+                        ret = ((curr_price - old_price) / old_price) * 100
+                        backtest_results.append({
+                            "Ticker": ticker.replace(".NS", ""),
+                            "Starting Price (₹)": round(old_price, 2),
+                            "Ending Price (₹)": round(curr_price, 2),
+                            "Return %": round(ret, 2)
+                        })
+                        
+            if backtest_results:
+                bt_df = pd.DataFrame(backtest_results)
+                bt_df = bt_df.sort_values(by="Return %", ascending=False)
+                
+                avg_ret = bt_df["Return %"].mean()
+                cagr = ((1 + (avg_ret/100)) ** (1/years) - 1) * 100
+                
+                col_b1, col_b2, col_b3 = st.columns(3)
+                col_b1.metric("Average Portfolio Return", f"{round(avg_ret, 1)}%", f"+{round(avg_ret - nifty_mock_return, 1)}% vs Nifty")
+                col_b2.metric("Portfolio CAGR", f"{round(cagr, 1)}%")
+                col_b3.metric("Top Performer", f"{bt_df.iloc[0]['Ticker']} ({bt_df.iloc[0]['Return %']}%)")
+                
+                st.markdown("#### Portfolio Picks Performance Breakdown")
+                st.dataframe(bt_df, use_container_width=True)
+                
+                comparison_df = pd.DataFrame({
+                    "Engine": ["Bharat AI GURJAS 2 Engine", "Nifty 50 Index"],
+                    "Cumulative Return %": [avg_ret, nifty_mock_return]
+                })
+                fig_compare = px.bar(
+                    comparison_df, 
+                    x="Engine", 
+                    y="Cumulative Return %", 
+                    color="Engine",
+                    color_discrete_sequence=['#10B981', '#415A77'],
+                    title="Strategy vs Benchmark Cumulative Return Comparison",
+                    template="plotly_white"
+                )
+                st.plotly_chart(fig_compare, use_container_width=True)
+            else:
+                st.info("Insufficient historical range to simulate backtest.")
+
+        # --- TAB 6: My Portfolio (Page 3) ---
+        with tab6:
+            render_portfolio_page(suffix="p3")
+
+        # --- TAB 7: Newsletter Dispatcher (Page 3) ---
+        with tab7:
+            st.subheader("📧 Newsletter & SMTP Mailing Engine (GURJAS 2 Mode)")
+            st.write("Configure email updates to be delivered to subscribers with attached PDF & Excel sheets representing GURJAS 2 picks.")
+            
+            smtp_user = os.getenv("SMTP_USER") or "Not Configured"
+            smtp_server = os.getenv("SMTP_SERVER")
+            recipients = os.getenv("EMAIL_RECIPIENTS") or "None"
+            
+            st.markdown(f"""
+            **Current SMTP Configuration:**
+            * **Sender Account:** `{smtp_user}`
+            * **Server Address:** `{smtp_server}`
+            * **Mailing List:** `{recipients}`
+            """)
+            
+            st.markdown("---")
+            st.write("#### Manual Newsletter Trigger")
+            if st.button("Generate GURJAS 2 Reports & Dispatch Newsletter", key="p3_mail_trigger"):
+                with st.spinner("Compiling PDF and Excel dossier files..."):
+                    pdf_name = "Bharat_AI_Gill_Gurjas2_Report.pdf"
+                    excel_name = "Bharat_AI_Gill_Gurjas2_Data.xlsx"
+                    pdf_path = os.path.join("reports", pdf_name)
+                    excel_path = os.path.join("reports", excel_name)
+                    
+                    pdf_ok = generate_pdf_report_v2(df, pdf_name)
+                    excel_ok = generate_excel_report_v2(df, continuous, red_alerts, excel_name)
+                    
+                    if pdf_ok and excel_ok:
+                        st.success("GURJAS 2 Reports generated successfully!")
+                        
+                        st.write("Attempting SMTP delivery...")
+                        date_str = datetime.datetime.now().strftime("%d %B %Y")
+                        mail_ok, mail_msg = send_momentum_newsletter(pdf_path, excel_path, date_str)
+                        
+                        if mail_ok:
+                            st.success("Newsletter dispatched successfully to all recipients!")
+                        else:
+                            st.error(f"Email Dispatch Failed: {mail_msg}")
+                            st.info("Tip: Double-check that your SMTP user and app passwords are set correctly in your `.env` file.")
+                    else:
+                        st.error("Report generation failed. Check server logs.")
+
+    elif engine_page == "🏭 Page 4: Sectors & Industries":
         
         if df.empty:
             st.warning("No stock data available. Run a scan first.")

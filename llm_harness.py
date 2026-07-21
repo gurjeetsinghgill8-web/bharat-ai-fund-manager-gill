@@ -356,16 +356,6 @@ def generate_ai_narrative_v2(ticker, row_data):
     This stock passes our 200 SMA filter (meaning it trades above its 200-day simple moving average).
     
     Company Ticker: {ticker.replace('.NS', '')}
-    Current Price: ₹{row_data['Price']}
-    200-day Moving Average (200 SMA): ₹{row_data['200 SMA']}
-    Distance from 200 SMA: {row_data['200 SMA Dist %']}% (lower distance is better for entry)
-    Total Score on our Value/SMA Engine: {row_data['Total Score']}/16
-    Sales Score: {row_data['Sales Score']}/5
-    Profit Score: {row_data['Profit Score']}/5
-    Sales CAGR (Compounded Annual growth rate): {row_data['Sales CAGR']}% (3Y: {row_data.get('Sales CAGR 3Y', 0)}%, 5Y: {row_data.get('Sales CAGR 5Y', 0)}%)
-    Profit CAGR (Compounded Annual growth rate): {row_data['Profit CAGR']}% (3Y: {row_data.get('Profit CAGR 3Y', 0)}%, 5Y: {row_data.get('Profit CAGR 5Y', 0)}%)
-    Sales CAGR Score: {row_data['Sales CAGR Score']}/3
-    Profit CAGR Score: {row_data['Profit CAGR Score']}/3
     Growth Accelerating (CAGR 3Y > CAGR 5Y & Overall CAGR > CAGR 3Y): {'Yes' if row_data.get('CAGR Accelerating', False) else 'No'}
     Value Fit (PE < EPS): {'Yes' if row_data['Value Fit'] else 'No'}
     PE Ratio: {row_data['PE']}

@@ -297,7 +297,7 @@ def generate_stock_narrative_v2(ticker, row_data):
     profit_cagr = row_data["Profit CAGR"]
     sma_200 = row_data["200 SMA"]
     dist_pct = row_data["200 SMA Dist %"]
-    value_fit = row_data["Value Fit"]
+    value_fit = row_data.get("Value Fit", row_data.get("PE vs EPS Score", 0) > 0)
     cagr_accel = row_data.get("CAGR Accelerating", False)
     
     debt_msg = "debt-free / very low debt" if debt < 0.3 else ("manageable debt" if debt < 1.0 else "high debt leverage")

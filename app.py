@@ -532,25 +532,38 @@ st.sidebar.caption(f"Universe: {len(all_tickers)} stocks")
 
 # Cache info & cleaner
 st.sidebar.markdown("---")
-st.sidebar.caption("💾 **Cache Info**")
+st.sidebar.caption("💾 **Cache Management**")
 _cache_count = len(os.listdir("data_cache")) if os.path.exists("data_cache") else 0
-st.sidebar.caption(f"Stock cache: {_cache_count} files (expires in 7d)")
-if st.sidebar.button("🧹 Clean Old Cache", help="Delete cache older than 7 days"):
-    cleaned = 0
+st.sidebar.caption(f"Stock cache: {_cache_count} cached stocks")
+if st.sidebar.button("🧹 Clean & Reset All Cache", help="Wipe all cached data and fetch fresh 100% Screener.in data"):
+    # Clear data_cache
     if os.path.exists("data_cache"):
-        now_ts = __import__('time').time()
         for fname in os.listdir("data_cache"):
             fpath = os.path.join("data_cache", fname)
             if os.path.isfile(fpath):
-                age_days = (now_ts - os.path.getmtime(fpath)) / 86400
-                if age_days > 7:
-                    os.remove(fpath)
-                    cleaned += 1
-    if cleaned > 0:
-        st.sidebar.success(f"🧹 Cleaned {cleaned} old cache files!")
-        st.session_state["stock_cache"] = {}  # Force refresh
-    else:
-        st.sidebar.info("No old cache files to clean.")
+                try: os.remove(fpath)
+                except Exception: pass
+    # Clear screener_cache
+    if os.path.exists("screener_cache"):
+        for fname in os.listdir("screener_cache"):
+            fpath = os.path.join("screener_cache", fname)
+            if os.path.isfile(fpath):
+                try: os.remove(fpath)
+                except Exception: pass
+    # Clear DB cache
+    try:
+        from db import get_db_connection
+        with get_db_connection() as conn:
+            conn.execute("DELETE FROM scan_cache;")
+            conn.execute("DELETE FROM scan_meta;")
+            conn.commit()
+    except Exception:
+        pass
+    
+    st.session_state["stock_cache"] = {}
+    st.session_state["last_update"] = None
+    st.sidebar.success("✅ All caches cleared! Rescanning with fresh Screener.in data...")
+    st.rerun()
 
 
 # ============================================================

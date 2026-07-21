@@ -1337,30 +1337,48 @@ else:
         
         # --- TAB 1: Ranked Leaderboard ---
         with tab1:
-            st.subheader("Equities Ranked by GURJAS 1 Screener Criteria (Sorted by PEG Ratio)")
-            st.write("Click on any row symbol in the dropdown below to trigger the Jarvis gen AI narrative breakdown.")
+            st.subheader("🎯 GURJAS 1 Qualifying Matches (Screener.in Exact Match)")
+            st.write("Showing ONLY stocks that pass ALL 8 GURJAS 1 criteria simultaneously: Sales/Profit 3Y & 5Y & Overall > 20%, 200 DMA < Current Price, and PEG < 1.2.")
             
-            display_df = df.copy() if not df.empty else pd.DataFrame()
-            if not display_df.empty:
-                display_df["Match Status"] = display_df["Gurjas1 Pass"].map({True: "✅ PERFECT MATCH", False: "⚠️ Near Match"})
+            # Filter ONLY stocks that passed Gurjas1 Pass == True for main table
+            perfect_matches = df[df["Gurjas1 Pass"] == True].copy() if (not df.empty and "Gurjas1 Pass" in df.columns) else pd.DataFrame()
+            
+            if not perfect_matches.empty:
+                perfect_matches["Match Status"] = "✅ PERFECT MATCH"
                 display_cols = [
                     "Ticker", "Match Status", "PEG Ratio", "Market Cap (Cr)", "Price", "200 SMA", "200 SMA Dist %",
                     "Sales CAGR 3Y", "Sales CAGR 5Y", "Sales CAGR",
                     "Profit CAGR 3Y", "Profit CAGR 5Y", "Profit CAGR",
                     "PE", "Stars (Total)", "Sector", "Category"
                 ]
-                display_cols = [c for c in display_cols if c in display_df.columns]
-                display_df = display_df[display_cols]
-                
-            st.dataframe(
-                display_df,
-                use_container_width=True,
-                height=min(600, 35 * len(display_df) + 40)
-            )
+                display_cols = [c for c in display_cols if c in perfect_matches.columns]
+                st.dataframe(
+                    perfect_matches[display_cols],
+                    use_container_width=True,
+                    height=min(400, 35 * len(perfect_matches) + 40)
+                )
+            else:
+                st.info("ℹ️ No stocks in the current scanned pool pass ALL 8 GURJAS 1 conditions simultaneously. Select '🌐 Top 4000+ (All Stocks)' in the sidebar and run 'System Scan' to search all listed stocks.")
+            
+            # Optional Expander for Near Matches
+            with st.expander("🔍 View Near-Match Stocks & Scanned Pool Breakdown (Optional)"):
+                near_matches = df[df["Gurjas1 Pass"] == False].copy() if (not df.empty and "Gurjas1 Pass" in df.columns) else pd.DataFrame()
+                if not near_matches.empty:
+                    near_matches["Match Status"] = "⚠️ Near Match"
+                    display_cols = [
+                        "Ticker", "Match Status", "PEG Ratio", "Market Cap (Cr)", "Price", "200 SMA", "200 SMA Dist %",
+                        "Sales CAGR 3Y", "Sales CAGR 5Y", "Sales CAGR",
+                        "Profit CAGR 3Y", "Profit CAGR 5Y", "Profit CAGR",
+                        "PE", "Stars (Total)", "Sector", "Category"
+                    ]
+                    display_cols = [c for c in display_cols if c in near_matches.columns]
+                    st.dataframe(near_matches[display_cols], use_container_width=True, height=400)
             
             st.markdown("---")
             st.subheader("🤖 Gen AI Jarvis Stock Diagnostic Report (GURJAS 1 Mode)")
-            selected_ticker = st.selectbox("Select Ticker for Diagnostic", df["Ticker"].tolist() if not df.empty else ["None"], key="p2_diag_tk")
+            p2_matching_tickers = df[df["Gurjas1 Pass"] == True]["Ticker"].tolist() if (not df.empty and "Gurjas1 Pass" in df.columns) else []
+            p2_options = p2_matching_tickers if p2_matching_tickers else (df["Ticker"].tolist() if not df.empty else ["None"])
+            selected_ticker = st.selectbox("Select Ticker for Diagnostic", p2_options, key="p2_diag_tk")
             
             if selected_ticker and selected_ticker != "None":
                 stock_data = st.session_state["stock_cache"][selected_ticker]
@@ -1626,30 +1644,48 @@ else:
         
         # --- TAB 1: Ranked Leaderboard ---
         with tab1:
-            st.subheader("Equities Ranked by GURJAS 2 Screener Criteria (Sorted by PEG Ratio)")
-            st.write("Click on any row symbol in the dropdown below to trigger the Jarvis gen AI narrative breakdown.")
+            st.subheader("🎯 GURJAS 2 Qualifying Matches (Screener.in Exact Match)")
+            st.write("Showing ONLY stocks that pass ALL 7 GURJAS 2 criteria simultaneously: Sales/Profit 3Y > 10%, Sales/Profit Overall > 20%, Market Cap > ₹1,000 Cr, and PEG < 1.5.")
             
-            display_df = df.copy() if not df.empty else pd.DataFrame()
-            if not display_df.empty:
-                display_df["Match Status"] = display_df["Gurjas2 Pass"].map({True: "✅ PERFECT MATCH", False: "⚠️ Near Match"})
+            # Filter ONLY stocks that passed Gurjas2 Pass == True for main table
+            perfect_matches = df[df["Gurjas2 Pass"] == True].copy() if (not df.empty and "Gurjas2 Pass" in df.columns) else pd.DataFrame()
+            
+            if not perfect_matches.empty:
+                perfect_matches["Match Status"] = "✅ PERFECT MATCH"
                 display_cols = [
                     "Ticker", "Match Status", "PEG Ratio", "Market Cap (Cr)", "Price", "200 SMA", "200 SMA Dist %",
                     "Sales CAGR 3Y", "Sales CAGR 5Y", "Sales CAGR",
                     "Profit CAGR 3Y", "Profit CAGR 5Y", "Profit CAGR",
                     "PE", "Stars (Total)", "Sector", "Category"
                 ]
-                display_cols = [c for c in display_cols if c in display_df.columns]
-                display_df = display_df[display_cols]
-                
-            st.dataframe(
-                display_df,
-                use_container_width=True,
-                height=min(600, 35 * len(display_df) + 40)
-            )
+                display_cols = [c for c in display_cols if c in perfect_matches.columns]
+                st.dataframe(
+                    perfect_matches[display_cols],
+                    use_container_width=True,
+                    height=min(400, 35 * len(perfect_matches) + 40)
+                )
+            else:
+                st.info("ℹ️ No stocks in the current scanned pool pass ALL 7 GURJAS 2 conditions simultaneously. Select '🌐 Top 4000+ (All Stocks)' in the sidebar and run 'System Scan' to search all listed stocks.")
+            
+            # Optional Expander for Near Matches
+            with st.expander("🔍 View Near-Match Stocks & Scanned Pool Breakdown (Optional)"):
+                near_matches = df[df["Gurjas2 Pass"] == False].copy() if (not df.empty and "Gurjas2 Pass" in df.columns) else pd.DataFrame()
+                if not near_matches.empty:
+                    near_matches["Match Status"] = "⚠️ Near Match"
+                    display_cols = [
+                        "Ticker", "Match Status", "PEG Ratio", "Market Cap (Cr)", "Price", "200 SMA", "200 SMA Dist %",
+                        "Sales CAGR 3Y", "Sales CAGR 5Y", "Sales CAGR",
+                        "Profit CAGR 3Y", "Profit CAGR 5Y", "Profit CAGR",
+                        "PE", "Stars (Total)", "Sector", "Category"
+                    ]
+                    display_cols = [c for c in display_cols if c in near_matches.columns]
+                    st.dataframe(near_matches[display_cols], use_container_width=True, height=400)
             
             st.markdown("---")
             st.subheader("🤖 Gen AI Jarvis Stock Diagnostic Report (GURJAS 2 Mode)")
-            selected_ticker = st.selectbox("Select Ticker for Diagnostic", df["Ticker"].tolist() if not df.empty else ["None"], key="p3_diag_tk")
+            p3_matching_tickers = df[df["Gurjas2 Pass"] == True]["Ticker"].tolist() if (not df.empty and "Gurjas2 Pass" in df.columns) else []
+            p3_options = p3_matching_tickers if p3_matching_tickers else (df["Ticker"].tolist() if not df.empty else ["None"])
+            selected_ticker = st.selectbox("Select Ticker for Diagnostic", p3_options, key="p3_diag_tk")
             
             if selected_ticker and selected_ticker != "None":
                 stock_data = st.session_state["stock_cache"][selected_ticker]

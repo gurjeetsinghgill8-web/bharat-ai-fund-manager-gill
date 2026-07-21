@@ -277,15 +277,25 @@ def score_stock(stock_data):
         is_above_200_sma = current_price >= sma_200
         dist_pct = ((current_price - sma_200) / sma_200) * 100.0
 
+    # Latest YoY / TTM growth % (matching Screener.in "Sales growth" and "Profit growth")
+    sales_growth_latest = 0.0
+    if len(sales_hist) >= 2 and sales_hist[1] > 0:
+        sales_growth_latest = ((sales_hist[0] - sales_hist[1]) / sales_hist[1]) * 100.0
+    elif sales_cagr_3y is not None:
+        sales_growth_latest = sales_cagr_3y
+        
+    profit_growth_latest = 0.0
+    if len(profit_hist) >= 2 and profit_hist[1] > 0:
+        profit_growth_latest = ((profit_hist[0] - profit_hist[1]) / profit_hist[1]) * 100.0
+    elif profit_cagr_3y is not None:
+        profit_growth_latest = profit_cagr_3y
+
     # Sector / Industry / Exchange
     sector = stock_data.get("sector", "Unknown")
     industry = stock_data.get("industry", "Unknown")
     exchange = stock_data.get("exchange", "NSE")
 
     # === GURDEEP'S 24-STAR RATING SYSTEM (CAGR Thresholds) ===
-    # Sales stars: Overall + 3Y + 5Y = max 12
-    # Profit stars: Overall + 3Y + 5Y = max 12
-    # Grand total = max 24
     star_data = compute_cagr_stars(
         sales_cagr_all, sales_cagr_3y, sales_cagr_5y,
         profit_cagr_all, profit_cagr_3y, profit_cagr_5y
@@ -325,9 +335,7 @@ def score_stock(stock_data):
         "Quarter Score": quarter_score,
         "PE vs EPS Score": pe_eps_score,
         "Total Score": total_score,
-        # --- OLD STAR RATING (legacy, kept for backward compat) ---
         "Star Rating": star_data["Total Star Rating"],
-        # --- NEW 24-STAR SYSTEM ---
         "Sales CAGR Stars": star_data["Sales CAGR Stars"],
         "Sales CAGR 3Y Stars": star_data["Sales CAGR 3Y Stars"],
         "Sales CAGR 5Y Stars": star_data["Sales CAGR 5Y Stars"],
@@ -340,28 +348,29 @@ def score_stock(stock_data):
         "Profit CAGR Star Bar": star_data["Profit CAGR Star Bar"],
         "Profit CAGR 3Y Star Bar": star_data["Profit CAGR 3Y Star Bar"],
         "Profit CAGR 5Y Star Bar": star_data["Profit CAGR 5Y Star Bar"],
-        "Sales Star Total": star_data["Sales Star Total"],   # /12
-        "Profit Star Total": star_data["Profit Star Total"], # /12
-        "Total Star Rating": total_star_rating, # with bonus TA stars
-        "Star Badge": star_badge,  # with 🔄 TA badge
+        "Sales Star Total": star_data["Sales Star Total"],
+        "Profit Star Total": star_data["Profit Star Total"],
+        "Total Star Rating": total_star_rating,
+        "Star Badge": star_badge,
         "Stars (Sales Total)": f"{star_data['Sales Star Total']}/12",
         "Stars (Profit Total)": f"{star_data['Profit Star Total']}/12",
         "Stars (Total)": f"{total_star_rating}/24",
         "Sales+Profit CAGR Total": round(sales_profit_cagr_total, 2),
         "Turn Around": is_turnaround,
         "Turn Around Desc": turnaround_desc,
-        # --- RED ALERT ---
         "Red Alert": is_red_alert,
         "Red Reasons": ", ".join(red_reasons) if red_reasons else "None",
         "Momentum Status": momentum_status,
         "Debt/Equity": round(debt_eq, 2),
-        "Reserves": round(stock_data.get("reserves", 0.0) / 10000000.0, 2) if stock_data.get("reserves") else 0.0, # in Crores
+        "Reserves": round(stock_data.get("reserves", 0.0) / 10000000.0, 2) if stock_data.get("reserves") else 0.0,
         "Promoter %": round(stock_data.get("promoter_share", 0.0), 1),
         "Institution %": round(stock_data.get("inst_share", 0.0), 1),
         "Public %": round(stock_data.get("public_share", 0.0), 1),
         "Sales CAGR": round(sales_cagr_all, 2) if sales_cagr_all is not None else 0.0,
         "Sales CAGR 3Y": round(sales_cagr_3y, 2) if sales_cagr_3y is not None else 0.0,
         "Sales CAGR 5Y": round(sales_cagr_5y, 2) if sales_cagr_5y is not None else 0.0,
+        "Sales Growth": round(sales_growth_latest, 2),
+        "Profit Growth": round(profit_growth_latest, 2),
         "Profit CAGR": round(profit_cagr_all, 2) if profit_cagr_all is not None else 0.0,
         "Profit CAGR 3Y": round(profit_cagr_3y, 2) if profit_cagr_3y is not None else 0.0,
         "Profit CAGR 5Y": round(profit_cagr_5y, 2) if profit_cagr_5y is not None else 0.0,
@@ -369,7 +378,6 @@ def score_stock(stock_data):
         "Profit Growth Accelerating": profit_growth_accelerating,
         "CAGR Accelerating": cagr_accelerating,
         "Is Above 200 SMA": is_above_200_sma,
-        # --- BULL STATUS ---
         "Bull Status": "🐂🐂 Double Bull" if ((sales_cagr_all is not None and sales_cagr_all > 20.0) and (profit_cagr_all is not None and profit_cagr_all > 20.0) and (sales_score == 5 and profit_score == 5)) else (
             "🐂 Bull" if (((sales_cagr_all is not None and sales_cagr_all > 20.0) and (profit_cagr_all is not None and profit_cagr_all > 20.0)) or (sales_score == 5 and profit_score == 5)) else ""
         )
@@ -385,25 +393,13 @@ def run_scoring(batch_data):
     if df.empty:
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
         
-    # Priority: Sort by Star Rating descending (5★ first), then Total Score descending
     df = df.sort_values(by=["Star Rating", "Total Score"], ascending=[False, False])
-    
-    # Latest Highs (Price Score = 5)
     latest_highs_df = df[df["Price Score"] == 5].copy()
-    
-    # Continuous Performers (Momentum Status != Normal)
     continuous_performers_df = df[df["Momentum Status"] != "Normal"].copy()
-    
-    # Red Alerts
     red_alerts_df = df[df["Red Alert"] == True].copy()
-    
     return df, latest_highs_df, continuous_performers_df, red_alerts_df
 
 def calculate_cagr(history):
-    """
-    Calculates Compounded Annual Growth Rate (CAGR) from history list.
-    index 0 is the latest year, index -1 is the oldest year.
-    """
     if not history or len(history) < 2:
         return 0.0
     latest = history[0]
@@ -418,41 +414,44 @@ def calculate_cagr(history):
 
 def calculate_cagr_for_years(history, years):
     """
-    Calculates CAGR over exactly `years` years from the history list.
-    history[0] = latest year, history[years] = value exactly `years` years ago.
+    Calculates CAGR over `years` years from the history list.
+    history[0] = latest year (TTM / Mar 2025), history[years] = value `years` years ago.
     
-    IMPORTANT: Pass the actual number of years you want:
-        - 3-year CAGR  → calculate_cagr_for_years(hist, 3)
-        - 5-year CAGR  → calculate_cagr_for_years(hist, 5)
-        - 10-year CAGR → calculate_cagr_for_years(hist, 10)
-    
-    Formula: (latest / oldest) ^ (1 / years) - 1
-    This matches Screener.in's "Sales growth 3Years" and "Sales growth 5Years" definitions.
-    
-    Returns percentage (e.g. 22.5 for 22.5%), or None if insufficient data.
+    If history has >= 3 data points but fewer than years+1 (e.g. 4 years of history for IPOs like Kalyan Jewellers),
+    evaluates CAGR over available years (len(history)-1) so fast-growing newer listings pass Screener.in rules.
     """
-    if not history or len(history) < years + 1:
+    if not history or len(history) < 2:
         return None
     latest = history[0]
-    oldest = history[years]  # exactly `years` data points back
+    
+    target_idx = years
+    actual_years = years
+    if target_idx >= len(history):
+        if len(history) >= 3:
+            target_idx = len(history) - 1
+            actual_years = len(history) - 1
+        else:
+            return None
+            
+    oldest = history[target_idx]
     if oldest <= 0 or latest <= 0:
         return None
     try:
-        return ((latest / oldest) ** (1 / years) - 1) * 100.0
+        return ((latest / oldest) ** (1 / actual_years) - 1) * 100.0
     except Exception:
         return None
 
 def score_stock_v2(stock_data):
     """
     Page 2: GURJAS 1 Screener — Screener.in Exact Match
-    Criteria (ALL must pass — AND logic):
+    Criteria (ALL 8 must pass — AND logic):
       - Sales growth 3Years > 20
       - Sales growth 5Years > 20
       - Profit growth 3Years > 20
       - Profit growth 5Years > 20
-      - Profit growth (Overall) > 20
-      - Sales growth (Overall) > 20
-      - DMA 200 < Current price  (price must be ABOVE 200 SMA)
+      - Profit growth (latest YoY/TTM) > 20
+      - Sales growth (latest YoY/TTM) > 20
+      - DMA 200 < Current price  (price > 200 SMA)
       - PEG Ratio < 1.2
     """
     res = score_stock(stock_data)
@@ -460,19 +459,19 @@ def score_stock_v2(stock_data):
     s_5y = res.get("Sales CAGR 5Y", 0.0)
     p_3y = res.get("Profit CAGR 3Y", 0.0)
     p_5y = res.get("Profit CAGR 5Y", 0.0)
-    s_all = res.get("Sales CAGR", 0.0)
-    p_all = res.get("Profit CAGR", 0.0)
+    s_latest = res.get("Sales Growth", 0.0)    # Screener.in "Sales growth"
+    p_latest = res.get("Profit Growth", 0.0)   # Screener.in "Profit growth"
     peg = res.get("PEG Ratio", 0.0)
-    is_above_sma = res.get("Is Above 200 SMA", False)  # DMA 200 < Current price
+    is_above_sma = res.get("Is Above 200 SMA", False)
 
     gurjas1_pass = (
         (s_3y is not None and s_3y > 20.0) and
         (s_5y is not None and s_5y > 20.0) and
         (p_3y is not None and p_3y > 20.0) and
         (p_5y is not None and p_5y > 20.0) and
-        (s_all is not None and s_all > 20.0) and
-        (p_all is not None and p_all > 20.0) and
-        is_above_sma and                              # DMA 200 < Current price (Active!)
+        (s_latest is not None and s_latest > 20.0) and
+        (p_latest is not None and p_latest > 20.0) and
+        is_above_sma and
         (peg is not None and 0 < peg < 1.2)
     )
     res["Gurjas1 Pass"] = gurjas1_pass
@@ -481,36 +480,39 @@ def score_stock_v2(stock_data):
 
 def score_stock_v3(stock_data):
     """
-    Page 3: GURJAS 2 Screener
-    Criteria:
+    Page 3: GURJAS 2 Screener — Screener.in Exact Match
+    Criteria (ALL 7 must pass — AND logic):
       - Sales growth 3Years > 10
       - Sales growth 5Years > 10
-      - Sales growth > 20
-      - Profit growth > 20
-      - Market Capitalization > 1000 Cr
       - Profit growth 3Years > 10
+      - Sales growth (latest YoY/TTM) > 20
+      - Profit growth (latest YoY/TTM) > 20
+      - Market Capitalization > 1000 Cr
       - PEG Ratio < 1.5
     """
     res = score_stock(stock_data)
     s_3y = res.get("Sales CAGR 3Y", 0.0)
     s_5y = res.get("Sales CAGR 5Y", 0.0)
     p_3y = res.get("Profit CAGR 3Y", 0.0)
-    s_all = res.get("Sales CAGR", 0.0)
-    p_all = res.get("Profit CAGR", 0.0)
+    s_latest = res.get("Sales Growth", 0.0)    # Screener.in "Sales growth"
+    p_latest = res.get("Profit Growth", 0.0)   # Screener.in "Profit growth"
     mcap = res.get("Market Cap (Cr)", 0.0)
     peg = res.get("PEG Ratio", 0.0)
-    
+
     gurjas2_pass = (
         (s_3y is not None and s_3y > 10.0) and
         (s_5y is not None and s_5y > 10.0) and
-        (s_all is not None and s_all > 20.0) and
-        (p_all is not None and p_all > 20.0) and
-        (mcap is not None and mcap > 1000.0) and
         (p_3y is not None and p_3y > 10.0) and
+        (s_latest is not None and s_latest > 20.0) and
+        (p_latest is not None and p_latest > 20.0) and
+        (mcap is not None and mcap > 1000.0) and
         (peg is not None and 0 < peg < 1.5)
     )
     res["Gurjas2 Pass"] = gurjas2_pass
     return res
+
+
+
 
 
 def run_scoring_v2(batch_data):

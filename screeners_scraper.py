@@ -180,15 +180,31 @@ def fetch_screener_data(ticker, force_refresh=False):
     if since_last < _MIN_REQUEST_INTERVAL:
         time.sleep(_MIN_REQUEST_INTERVAL - since_last)
     
-    url = f"https://www.screener.in/company/{symbol}/"
+    # Try consolidated URL first (matching Screener.in default screen engine)
+    url_cons = f"https://www.screener.in/company/{symbol}/consolidated/"
+    url_standalone = f"https://www.screener.in/company/{symbol}/"
     
     try:
-        resp = requests.get(url, headers=HEADERS, timeout=20)
+        resp = requests.get(url_cons, headers=HEADERS, timeout=20)
         _LAST_REQUEST_TIME = time.time()
         
-        if resp.status_code != 200:
-            print(f"screener_scraper: HTTP {resp.status_code} for {symbol}")
-            return {"sales": [], "profit": [], "years": [], "source": "screener.in", "success": False}
+        # Check if consolidated URL worked and has P&L table
+        is_valid_cons = False
+        if resp.status_code == 200:
+            soup_test = BeautifulSoup(resp.text, "html.parser")
+            for s in soup_test.find_all("section"):
+                h2 = s.find("h2")
+                if h2 and "Profit" in h2.get_text(strip=True) and s.find("table"):
+                    is_valid_cons = True
+                    break
+        
+        if not is_valid_cons:
+            # Fall back to standalone URL
+            resp = requests.get(url_standalone, headers=HEADERS, timeout=20)
+            _LAST_REQUEST_TIME = time.time()
+            if resp.status_code != 200:
+                print(f"screener_scraper: HTTP {resp.status_code} for {symbol}")
+                return {"sales": [], "profit": [], "years": [], "source": "screener.in", "success": False}
         
         soup = BeautifulSoup(resp.text, "html.parser")
         

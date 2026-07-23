@@ -336,6 +336,23 @@ def get_scan_meta() -> dict:
     return {"last_scan_time": None, "total_stocks": 0, "scan_mode": "Core 127"}
 
 
+def save_scan_meta(meta: dict):
+    _require_config()
+    payload = {
+        "id": 1,
+        "last_scan_time": meta.get("last_scan_time") or datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "total_stocks": meta.get("total_stocks", 0),
+        "scan_mode": meta.get("scan_mode", "Full Universe"),
+    }
+    with _client() as c:
+        r = c.post(
+            f"{REST_BASE}/scan_meta",
+            headers=_headers("resolution=merge-duplicates"),
+            content=json.dumps(payload),
+        )
+        r.raise_for_status()
+
+
 def clear_scan_cache():
     _require_config()
     # Delete all rows — filter neq on ticker (always true)

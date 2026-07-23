@@ -11,6 +11,7 @@ nse_tickers_cache.json
 # Secrets and Configurations
 .env
 api_key.txt
+secret.txt
 
 # Generated Reports (PDF and Excel outputs)
 *.pdf

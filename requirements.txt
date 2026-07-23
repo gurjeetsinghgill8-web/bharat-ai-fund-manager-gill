@@ -9,6 +9,8 @@ requests
 reportlab
 google-generativeai
 matplotlib
-websockets
+websockets>=13.0
 beautifulsoup4
-
+httpx
+fastapi
+uvicorn[standard]

@@ -18,10 +18,16 @@ import datetime
 import yfinance as yf
 import pandas as pd
 
-from db import (
-    load_portfolio_db, save_portfolio_db, add_holding_db, remove_holding_db,
-    get_all_user_ids_with_portfolios, get_all_users
-)
+try:
+    from supabase_db import (
+        load_portfolio_db, save_portfolio_db, add_holding_db, remove_holding_db,
+        get_all_user_ids_with_portfolios, get_all_users
+    )
+except ImportError:
+    from db import (
+        load_portfolio_db, save_portfolio_db, add_holding_db, remove_holding_db,
+        get_all_user_ids_with_portfolios, get_all_users
+    )
 
 # Legacy file path — kept for migration only
 PORTFOLIO_FILE = "portfolio.json"

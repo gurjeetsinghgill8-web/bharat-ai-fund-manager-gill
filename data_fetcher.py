@@ -7,7 +7,10 @@ import yfinance as yf
 import pandas as pd
 from dotenv import load_dotenv
 from screeners_scraper import fetch_screener_data
-from db import save_scan_cache, load_scan_cache, get_scan_meta
+try:
+    from supabase_db import save_scan_cache, load_scan_cache, get_scan_meta
+except ImportError:
+    from db import save_scan_cache, load_scan_cache, get_scan_meta
 
 load_dotenv()
 CACHE_EXPIRY_DAYS = int(os.getenv("CACHE_EXPIRY_DAYS", "7"))

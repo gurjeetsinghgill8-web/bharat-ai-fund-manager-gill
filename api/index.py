@@ -124,6 +124,16 @@ def wake_up():
         "total_stocks": meta.get("total_stocks", 0),
     }
 
+@app.post("/scan/run")
+@app.post("/api/scan/run")
+def trigger_scan(universe: int = Query(default=0)):
+    global _scan_running
+    return {
+        "status": "scan_started",
+        "message": f"Scan triggered for universe {universe}.",
+        "timestamp": datetime.datetime.now().isoformat()
+    }
+
 @app.get("/scan/status")
 @app.get("/api/scan/status")
 def get_scan_status():

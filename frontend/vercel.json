@@ -5,7 +5,7 @@
   "functions": {
     "api/index.py": {
       "runtime": "python3.12",
-      "includeFiles": ["../api/**", "../*.py", "../requirements.txt"]
+      "includeFiles": "../api/**,../*.py,../requirements.txt"
     }
   },
   "rewrites": [

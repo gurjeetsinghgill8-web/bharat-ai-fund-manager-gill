@@ -1,4 +1,16 @@
+import sys
 import os
+
+# Hugging Face Spaces (Gradio SDK) launcher:
+# If app.py is executed with standard Python (not streamlit), run FastAPI server on port 7860
+if __name__ == "__main__" and "streamlit" not in sys.argv[0]:
+    import uvicorn
+    from fastapi_app.main import app
+    port = int(os.getenv("PORT", 7860))
+    print(f"🚀 Starting Bharat AI FastAPI Backend on port {port}...")
+    uvicorn.run(app, host="0.0.0.0", port=port)
+    sys.exit(0)
+
 import datetime
 import streamlit as st
 import pandas as pd

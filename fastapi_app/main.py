@@ -37,6 +37,13 @@ _ROOT = os.path.dirname(_HERE)
 load_dotenv(os.path.join(_ROOT, ".env"))
 sys.path.insert(0, _ROOT)   # so we can import all project modules
 
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 # ── Project imports ────────────────────────────────────────────────────────────
 import supabase_db as db
 from symbols import get_all_tickers
@@ -77,7 +84,7 @@ async def lifespan(app: FastAPI):
     try:
         db.init_db()
     except Exception as e:
-        print(f"⚠️  Supabase warning on startup: {e}")
+        print(f"[WARN] Supabase warning on startup: {e}")
 
     # Catch-up scan check
     try:
@@ -94,16 +101,16 @@ async def lifespan(app: FastAPI):
             needs_scan = last_scan_date < today
 
         if needs_scan:
-            print(f"⏰ No scan found for today ({today}) — triggering background catch-up scan...")
+            print(f"[CATCH-UP] No scan found for today ({today}) — triggering background catch-up scan...")
             asyncio.create_task(_background_scan(universe_size=0))
         else:
-            print(f"✅ Today's scan already done (last: {last_scan}) — skipping catch-up")
+            print(f"[OK] Today's scan already done (last: {last_scan}) — skipping catch-up")
     except Exception as e:
-        print(f"⚠️  Catch-up scan check failed: {e}")
+        print(f"[WARN] Catch-up scan check failed: {e}")
 
     yield  # App runs here
 
-    print("👋 Bharat AI FastAPI shutting down")
+    print("[INFO] Bharat AI FastAPI shutting down")
 
 
 # ══════════════════════════════════════════════════════════════════════════════

@@ -65,7 +65,7 @@ def _headers(prefer: str = "") -> dict:
 
 def _client() -> "httpx.Client":
     """Returns a configured httpx client."""
-    return httpx.Client(timeout=30.0)
+    return httpx.Client(timeout=5.0)
 
 
 def _get(table: str, params: dict = None) -> list[dict]:

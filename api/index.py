@@ -92,6 +92,7 @@ class StockAsk(BaseModel):
     user_id: int = 1
 
 # Endpoints
+@app.get("/")
 @app.get("/health")
 @app.get("/api/health")
 def health_check():
@@ -111,6 +112,7 @@ def health_check():
         "version": "2.0"
     }
 
+@app.get("/wake")
 @app.get("/api/wake")
 def wake_up():
     db.init_db()
@@ -122,6 +124,7 @@ def wake_up():
         "total_stocks": meta.get("total_stocks", 0),
     }
 
+@app.get("/scan/status")
 @app.get("/api/scan/status")
 def get_scan_status():
     meta = db.get_scan_meta()
@@ -132,6 +135,7 @@ def get_scan_status():
         "scan_mode": meta.get("scan_mode", "Full Universe"),
     }
 
+@app.get("/scan/results/gurjas1")
 @app.get("/api/scan/results/gurjas1")
 def get_gurjas1_results():
     results = db.load_gurjas_results("GURJAS 1")

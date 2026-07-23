@@ -228,9 +228,9 @@ def score_stock(stock_data):
     price_hist = stock_data["price_history_6m"]
     momentum_status = "Normal"
     if price_hist:
-        days_30 = price_hist[-21:] if len(price_hist) >= 21 else price_hist
-        days_60 = price_hist[-42:] if len(price_hist) >= 42 else price_hist
-        days_180 = price_hist
+        days_30 = [x for x in (price_hist[-21:] if len(price_hist) >= 21 else price_hist) if x is not None]
+        days_60 = [x for x in (price_hist[-42:] if len(price_hist) >= 42 else price_hist) if x is not None]
+        days_180 = [x for x in price_hist if x is not None]
         
         min_30 = min(days_30) if days_30 else 0
         max_30 = max(days_30) if days_30 else 1

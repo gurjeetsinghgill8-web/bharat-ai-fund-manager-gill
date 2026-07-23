@@ -1,0 +1,12 @@
+.git
+.github
+node_modules
+frontend/node_modules
+data_cache
+screener_cache
+reports
+*.pkl
+*.db
+*.log
+*.pdf
+*.xlsx

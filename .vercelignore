@@ -1,5 +1,7 @@
 .git
 .github
+.vercel
+frontend/.vercel
 node_modules
 frontend/node_modules
 data_cache

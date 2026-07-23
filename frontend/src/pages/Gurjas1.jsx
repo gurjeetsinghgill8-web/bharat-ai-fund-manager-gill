@@ -44,7 +44,7 @@ export default function Gurjas1() {
 
   const filtered = stocks
     .filter(s => {
-      const sym = (s.symbol || s.ticker || s.Symbol || '').toUpperCase();
+      const sym = (s.symbol || s.ticker || s.Symbol || s.Ticker || '').toUpperCase();
       return sym.includes(search.toUpperCase());
     })
     .sort((a, b) => {
@@ -174,7 +174,8 @@ export default function Gurjas1() {
                 </thead>
                 <tbody>
                   {filtered.map((s, i) => {
-                    const sym = (s.symbol || s.ticker || s.Symbol || '').replace('.NS', '');
+                    const rawSym = getCol(s, ['symbol', 'ticker', 'Symbol', 'Ticker', 'symbol_name']) || '';
+                    const sym = rawSym.replace('.NS', '');
                     const s3  = parseFloat(getCol(s, ['sales_cagr_3y', 'Sales CAGR 3Y', 'sales_3y']));
                     const s5  = parseFloat(getCol(s, ['sales_cagr_5y', 'Sales CAGR 5Y', 'sales_5y']));
                     const sa  = parseFloat(getCol(s, ['sales_cagr_all', 'Sales CAGR', 'sales_all']));
@@ -182,10 +183,10 @@ export default function Gurjas1() {
                     const p5  = parseFloat(getCol(s, ['profit_cagr_5y', 'Profit CAGR 5Y', 'profit_5y']));
                     const pa  = parseFloat(getCol(s, ['profit_cagr_all', 'Profit CAGR', 'profit_all']));
                     const peg = parseFloat(getCol(s, ['peg', 'PEG Ratio', 'peg_ratio']));
-                    const ltp = parseFloat(getCol(s, ['ltp', 'LTP', 'current_price']));
-                    const sma = parseFloat(getCol(s, ['sma_200', '200 DMA', 'sma200']));
-                    const stars = parseInt(getCol(s, ['Grand Total Stars', 'grand_total_stars', 'total_stars'])) || 0;
-                    const mcap  = getCol(s, ['mcap', 'MCap', 'market_cap']);
+                    const ltp = parseFloat(getCol(s, ['ltp', 'LTP', 'current_price', 'Price']));
+                    const sma = parseFloat(getCol(s, ['sma_200', '200 DMA', 'sma200', '200 SMA']));
+                    const stars = parseInt(getCol(s, ['Grand Total Stars', 'grand_total_stars', 'total_stars', 'Stars (Total)'])) || 0;
+                    const mcap  = getCol(s, ['mcap', 'MCap', 'market_cap', 'Market Cap (Cr)']);
 
                     const fmt = v => isNaN(v) ? '—' : v.toFixed(1);
                     const pct = v => isNaN(v) ? '—' : <span className={v >= 20 ? 'positive' : 'neutral'}>{v.toFixed(1)}%</span>;

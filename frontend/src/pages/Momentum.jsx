@@ -27,20 +27,20 @@ export default function Momentum() {
       // Merge GURJAS 1 & 2 stocks — mark which screener they appear in
       const g1Map = {};
       (g1.data.stocks || []).forEach(s => {
-        const sym = s.symbol || s.ticker || '';
+        const sym = s.symbol || s.ticker || s.Symbol || s.Ticker || '';
         g1Map[sym] = { ...s, in_gurjas1: true };
       });
 
       const all = [...(g1.data.stocks || [])];
       (g2.data.stocks || []).forEach(s => {
-        const sym = s.symbol || s.ticker || '';
+        const sym = s.symbol || s.ticker || s.Symbol || s.Ticker || '';
         if (g1Map[sym]) g1Map[sym].in_gurjas2 = true;
         else all.push({ ...s, in_gurjas2: true });
       });
 
       // Tag gurjas2 on existing
       const merged = all.map(s => {
-        const sym = s.symbol || s.ticker || '';
+        const sym = s.symbol || s.ticker || s.Symbol || s.Ticker || '';
         return { ...s, in_gurjas1: !!g1Map[sym]?.in_gurjas1, in_gurjas2: !!g1Map[sym]?.in_gurjas2 };
       });
 
@@ -75,8 +75,8 @@ export default function Momentum() {
 
   const filtered = stocks
     .filter(s => {
-      const sym = (s.symbol || s.ticker || '').toUpperCase();
-      const aboveDma = getCol(s, ['above_200dma', 'above_sma', 'price_above_dma']);
+      const sym = (s.symbol || s.ticker || s.Symbol || s.Ticker || '').toUpperCase();
+      const aboveDma = getCol(s, ['above_200dma', 'above_sma', 'price_above_dma', 'Is Above 200 SMA']);
       if (filter === 'above_dma' && !aboveDma) return false;
       if (filter === 'gurjas1' && !s.in_gurjas1) return false;
       if (filter === 'gurjas2' && !s.in_gurjas2) return false;
@@ -86,7 +86,7 @@ export default function Momentum() {
     .sort((a, b) => {
       const getVal = (s) => {
         if (sortKey === 'momentum_score') {
-          const stars = parseInt(getCol(s, ['Grand Total Stars', 'grand_total_stars', 'total_stars'])) || 0;
+          const stars = parseInt(getCol(s, ['Grand Total Stars', 'grand_total_stars', 'total_stars', 'Stars (Total)'])) || 0;
           const peg   = parseFloat(getCol(s, ['peg', 'PEG Ratio'])) || 99;
           return stars - peg;
         }
@@ -96,7 +96,7 @@ export default function Momentum() {
       return sortDir === 'asc' ? av - bv : bv - av;
     });
 
-  const aboveDmaCount = stocks.filter(s => getCol(s, ['above_200dma', 'above_sma', 'price_above_dma'])).length;
+  const aboveDmaCount = stocks.filter(s => getCol(s, ['above_200dma', 'above_sma', 'price_above_dma', 'Is Above 200 SMA'])).length;
   const bothCount     = stocks.filter(s => s.in_gurjas1 && s.in_gurjas2).length;
 
   const Th = ({ k, label }) => (
@@ -180,15 +180,16 @@ export default function Momentum() {
                 </thead>
                 <tbody>
                   {filtered.map((s, i) => {
-                    const sym = (s.symbol || s.ticker || '').replace('.NS', '');
-                    const ltp = parseFloat(getCol(s, ['ltp', 'LTP']));
-                    const sma = parseFloat(getCol(s, ['sma_200', '200 DMA']));
+                    const rawSym = getCol(s, ['symbol', 'ticker', 'Symbol', 'Ticker', 'symbol_name']) || '';
+                    const sym = rawSym.replace('.NS', '');
+                    const ltp = parseFloat(getCol(s, ['ltp', 'LTP', 'current_price', 'Price']));
+                    const sma = parseFloat(getCol(s, ['sma_200', '200 DMA', 'sma200', '200 SMA']));
                     const s3  = parseFloat(getCol(s, ['sales_cagr_3y', 'Sales CAGR 3Y']));
                     const p3  = parseFloat(getCol(s, ['profit_cagr_3y', 'Profit CAGR 3Y']));
                     const peg = parseFloat(getCol(s, ['peg', 'PEG Ratio']));
-                    const mc  = parseFloat(getCol(s, ['mcap', 'MCap']));
-                    const aboveDma = getCol(s, ['above_200dma', 'above_sma', 'price_above_dma']);
-                    const stars = parseInt(getCol(s, ['Grand Total Stars', 'grand_total_stars', 'total_stars'])) || 0;
+                    const mc  = parseFloat(getCol(s, ['mcap', 'MCap', 'market_cap', 'Market Cap (Cr)']));
+                    const aboveDma = getCol(s, ['above_200dma', 'above_sma', 'price_above_dma', 'Is Above 200 SMA']);
+                    const stars = parseInt(getCol(s, ['Grand Total Stars', 'grand_total_stars', 'total_stars', 'Stars (Total)'])) || 0;
 
                     return (
                       <tr key={sym + i}>

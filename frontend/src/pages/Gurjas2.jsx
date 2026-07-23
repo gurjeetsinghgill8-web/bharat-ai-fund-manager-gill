@@ -48,8 +48,8 @@ export default function Gurjas2() {
 
   const filtered = stocks
     .filter(s => {
-      const sym = (s.symbol || s.ticker || s.Symbol || '').toUpperCase();
-      const mcap = parseFloat(getCol(s, ['mcap', 'MCap', 'market_cap']));
+      const sym = (s.symbol || s.ticker || s.Symbol || s.Ticker || '').toUpperCase();
+      const mcap = parseFloat(getCol(s, ['mcap', 'MCap', 'market_cap', 'Market Cap (Cr)']));
       const passSearch = sym.includes(search.toUpperCase());
       const passMcap = minMcap ? (!isNaN(mcap) && mcap >= parseFloat(minMcap)) : true;
       return passSearch && passMcap;
@@ -68,9 +68,9 @@ export default function Gurjas2() {
   );
 
   // MCap distribution stats
-  const largeCap  = stocks.filter(s => parseFloat(getCol(s, ['mcap', 'MCap', 'market_cap'])) >= 20000).length;
-  const midCap    = stocks.filter(s => { const m = parseFloat(getCol(s, ['mcap', 'MCap', 'market_cap'])); return m >= 5000 && m < 20000; }).length;
-  const smallCap  = stocks.filter(s => parseFloat(getCol(s, ['mcap', 'MCap', 'market_cap'])) < 5000).length;
+  const largeCap  = stocks.filter(s => parseFloat(getCol(s, ['mcap', 'MCap', 'market_cap', 'Market Cap (Cr)'])) >= 20000).length;
+  const midCap    = stocks.filter(s => { const m = parseFloat(getCol(s, ['mcap', 'MCap', 'market_cap', 'Market Cap (Cr)'])); return m >= 5000 && m < 20000; }).length;
+  const smallCap  = stocks.filter(s => parseFloat(getCol(s, ['mcap', 'MCap', 'market_cap', 'Market Cap (Cr)'])) < 5000).length;
 
   return (
     <>
@@ -169,17 +169,18 @@ export default function Gurjas2() {
                 </thead>
                 <tbody>
                   {filtered.map((s, i) => {
-                    const sym = (s.symbol || s.ticker || s.Symbol || '').replace('.NS', '');
+                    const rawSym = getCol(s, ['symbol', 'ticker', 'Symbol', 'Ticker', 'symbol_name']) || '';
+                    const sym = rawSym.replace('.NS', '');
                     const s3  = parseFloat(getCol(s, ['sales_cagr_3y', 'Sales CAGR 3Y']));
                     const s5  = parseFloat(getCol(s, ['sales_cagr_5y', 'Sales CAGR 5Y']));
                     const sa  = parseFloat(getCol(s, ['sales_cagr_all', 'Sales CAGR']));
                     const p3  = parseFloat(getCol(s, ['profit_cagr_3y', 'Profit CAGR 3Y']));
                     const pa  = parseFloat(getCol(s, ['profit_cagr_all', 'Profit CAGR']));
                     const peg = parseFloat(getCol(s, ['peg', 'PEG Ratio']));
-                    const mc  = parseFloat(getCol(s, ['mcap', 'MCap', 'market_cap']));
-                    const ltp = parseFloat(getCol(s, ['ltp', 'LTP']));
-                    const stars = parseInt(getCol(s, ['Grand Total Stars', 'grand_total_stars', 'total_stars'])) || 0;
-                    const aboveDma = getCol(s, ['above_200dma', 'above_sma', 'price_above_dma']);
+                    const mc  = parseFloat(getCol(s, ['mcap', 'MCap', 'market_cap', 'Market Cap (Cr)']));
+                    const ltp = parseFloat(getCol(s, ['ltp', 'LTP', 'current_price', 'Price']));
+                    const stars = parseInt(getCol(s, ['Grand Total Stars', 'grand_total_stars', 'total_stars', 'Stars (Total)'])) || 0;
+                    const aboveDma = getCol(s, ['above_200dma', 'above_sma', 'price_above_dma', 'Is Above 200 SMA']);
 
                     const pct = v => isNaN(v) ? '—' : <span className={v >= 20 ? 'positive' : v >= 10 ? 'neutral' : ''}>{v.toFixed(1)}%</span>;
 

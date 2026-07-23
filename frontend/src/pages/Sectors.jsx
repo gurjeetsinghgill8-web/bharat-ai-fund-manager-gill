@@ -29,8 +29,8 @@ export default function Sectors() {
         // Deduplicate by symbol
         const seen = new Set();
         const deduped = all.filter(s => {
-          const sym = s.symbol || s.ticker || '';
-          if (seen.has(sym)) return false;
+          const sym = s.symbol || s.ticker || s.Symbol || s.Ticker || '';
+          if (!sym || seen.has(sym)) return false;
           seen.add(sym);
           return true;
         });
@@ -60,7 +60,7 @@ export default function Sectors() {
       name: name.length > 18 ? name.slice(0, 18) + '…' : name,
       fullName: name,
       count: items.length,
-      avgStars: (items.reduce((s, x) => s + (parseInt(getCol(x, ['Grand Total Stars', 'total_stars'])) || 0), 0) / items.length).toFixed(1),
+      avgStars: (items.reduce((s, x) => s + (parseInt(getCol(x, ['Grand Total Stars', 'total_stars', 'Stars (Total)'])) || 0), 0) / items.length).toFixed(1),
     }))
     .sort((a, b) => b.count - a.count)
     .slice(0, 15);
@@ -146,11 +146,12 @@ export default function Sectors() {
                       </thead>
                       <tbody>
                         {selectedStocks.map(s => {
-                          const sym  = (s.symbol || s.ticker || '').replace('.NS', '');
+                          const rawSym = getCol(s, ['symbol', 'ticker', 'Symbol', 'Ticker', 'symbol_name']) || '';
+                          const sym = rawSym.replace('.NS', '');
                           const s3   = parseFloat(getCol(s, ['sales_cagr_3y', 'Sales CAGR 3Y']));
                           const p3   = parseFloat(getCol(s, ['profit_cagr_3y', 'Profit CAGR 3Y']));
                           const peg  = parseFloat(getCol(s, ['peg', 'PEG Ratio']));
-                          const stars = parseInt(getCol(s, ['Grand Total Stars', 'total_stars'])) || 0;
+                          const stars = parseInt(getCol(s, ['Grand Total Stars', 'grand_total_stars', 'total_stars', 'Stars (Total)'])) || 0;
                           return (
                             <tr key={sym}>
                               <td>{sym}</td>

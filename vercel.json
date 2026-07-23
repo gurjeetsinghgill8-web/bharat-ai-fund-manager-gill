@@ -6,7 +6,11 @@
   "functions": {
     "api/index.py": {
       "runtime": "python3.12",
-      "includeFiles": "*.py"
+      "includeFiles": "fastapi_app/**,api/**,*.py"
+    },
+    "frontend/api/index.py": {
+      "runtime": "python3.12",
+      "includeFiles": "fastapi_app/**,api/**,*.py"
     }
   },
   "rewrites": [

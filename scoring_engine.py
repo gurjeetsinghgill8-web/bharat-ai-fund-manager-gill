@@ -386,6 +386,26 @@ def score_stock(stock_data):
         "Profit Growth Accelerating": profit_growth_accelerating,
         "CAGR Accelerating": cagr_accelerating,
         "Is Above 200 SMA": is_above_200_sma,
+        "GURJAS_1": (
+            (sales_cagr_3y is not None and sales_cagr_3y >= 15.0) and
+            (profit_cagr_3y is not None and profit_cagr_3y >= 15.0) and
+            is_above_200_sma
+        ),
+        "GURJAS_2": (
+            (sales_cagr_3y is not None and sales_cagr_3y >= 10.0) and
+            (profit_cagr_3y is not None and profit_cagr_3y >= 10.0) and
+            (market_cap_cr is not None and market_cap_cr >= 500.0)
+        ),
+        "Gurjas1 Pass": (
+            (sales_cagr_3y is not None and sales_cagr_3y >= 15.0) and
+            (profit_cagr_3y is not None and profit_cagr_3y >= 15.0) and
+            is_above_200_sma
+        ),
+        "Gurjas2 Pass": (
+            (sales_cagr_3y is not None and sales_cagr_3y >= 10.0) and
+            (profit_cagr_3y is not None and profit_cagr_3y >= 10.0) and
+            (market_cap_cr is not None and market_cap_cr >= 500.0)
+        ),
         "Bull Status": "🐂🐂 Double Bull" if ((sales_cagr_all is not None and sales_cagr_all > 20.0) and (profit_cagr_all is not None and profit_cagr_all > 20.0) and (sales_score == 5 and profit_score == 5)) else (
             "🐂 Bull" if (((sales_cagr_all is not None and sales_cagr_all > 20.0) and (profit_cagr_all is not None and profit_cagr_all > 20.0)) or (sales_score == 5 and profit_score == 5)) else ""
         )

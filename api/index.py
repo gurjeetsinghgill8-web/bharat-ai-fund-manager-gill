@@ -127,7 +127,11 @@ def wake_up():
 @app.get("/scan/status")
 @app.get("/api/scan/status")
 def get_scan_status():
-    meta = db.get_scan_meta()
+    try:
+        meta = db.get_scan_meta() or {}
+    except Exception as e:
+        print(f"Error getting scan meta: {e}")
+        meta = {}
     return {
         "scan_running": _scan_running,
         "last_scan_time": meta.get("last_scan_time"),
@@ -138,16 +142,29 @@ def get_scan_status():
 @app.get("/scan/results/gurjas1")
 @app.get("/api/scan/results/gurjas1")
 def get_gurjas1_results():
-    results = db.load_gurjas_results("GURJAS 1")
+    try:
+        results = db.load_gurjas_results("GURJAS1")
+        if not results:
+            results = db.load_gurjas_results("GURJAS 1")
+    except Exception as e:
+        print(f"Error loading GURJAS 1: {e}")
+        results = []
     return {
         "screener": "GURJAS 1",
         "count": len(results),
         "stocks": results,
     }
 
+@app.get("/scan/results/gurjas2")
 @app.get("/api/scan/results/gurjas2")
 def get_gurjas2_results():
-    results = db.load_gurjas_results("GURJAS 2")
+    try:
+        results = db.load_gurjas_results("GURJAS2")
+        if not results:
+            results = db.load_gurjas_results("GURJAS 2")
+    except Exception as e:
+        print(f"Error loading GURJAS 2: {e}")
+        results = []
     return {
         "screener": "GURJAS 2",
         "count": len(results),

@@ -305,15 +305,27 @@ async def scan_status():
 
 @app.get("/api/scan/results/gurjas1", tags=["Scan"])
 async def get_gurjas1_results():
-    """Returns latest GURJAS 1 screener results (61 stocks)."""
-    results = db.load_gurjas_results("GURJAS1")
+    """Returns latest GURJAS 1 screener results."""
+    try:
+        results = db.load_gurjas_results("GURJAS1")
+        if not results:
+            results = db.load_gurjas_results("GURJAS 1")
+    except Exception as e:
+        print(f"Error loading GURJAS 1: {e}")
+        results = []
     return {"screener": "GURJAS1", "count": len(results), "stocks": results}
 
 
 @app.get("/api/scan/results/gurjas2", tags=["Scan"])
 async def get_gurjas2_results():
-    """Returns latest GURJAS 2 screener results (97 stocks)."""
-    results = db.load_gurjas_results("GURJAS2")
+    """Returns latest GURJAS 2 screener results."""
+    try:
+        results = db.load_gurjas_results("GURJAS2")
+        if not results:
+            results = db.load_gurjas_results("GURJAS 2")
+    except Exception as e:
+        print(f"Error loading GURJAS 2: {e}")
+        results = []
     return {"screener": "GURJAS2", "count": len(results), "stocks": results}
 
 

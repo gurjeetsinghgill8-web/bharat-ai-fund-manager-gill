@@ -124,10 +124,36 @@ def wake_up():
         "total_stocks": meta.get("total_stocks", 0),
     }
 
+def _run_scan_job(universe_size: int = 0):
+    global _scan_running
+    if _scan_running:
+        return
+    _scan_running = True
+    try:
+        tickers = get_all_tickers(use_full=True, limit=universe_size) if universe_size > 0 else get_all_tickers()
+        data = batch_update_stocks_parallel(tickers, force_refresh=True, max_workers=10) if len(tickers) > 200 else batch_update_stocks(tickers, force_refresh=True)
+        if data:
+            db.save_scan_cache(data)
+            df, lh, c, ra = run_scoring(data)
+            if not df.empty:
+                g1 = df[df.get("GURJAS_1", False) == True].to_dict("records") if "GURJAS_1" in df.columns else []
+                g2 = df[df.get("GURJAS_2", False) == True].to_dict("records") if "GURJAS_2" in df.columns else []
+                db.save_gurjas_results("GURJAS1", g1)
+                db.save_gurjas_results("GURJAS 1", g1)
+                db.save_gurjas_results("GURJAS2", g2)
+                db.save_gurjas_results("GURJAS 2", g2)
+                meta = {"last_scan_time": datetime.datetime.now().isoformat(), "total_stocks": len(data), "scan_mode": "Full Universe"}
+                db.save_scan_meta(meta)
+    except Exception as e:
+        print(f"Background scan error: {e}")
+    finally:
+        _scan_running = False
+
 @app.post("/scan/run")
 @app.post("/api/scan/run")
-def trigger_scan(universe: int = Query(default=0)):
-    global _scan_running
+def trigger_scan(universe: int = Query(default=0), background_tasks: BackgroundTasks = None):
+    if background_tasks:
+        background_tasks.add_task(_run_scan_job, universe)
     return {
         "status": "scan_started",
         "message": f"Scan triggered for universe {universe}.",

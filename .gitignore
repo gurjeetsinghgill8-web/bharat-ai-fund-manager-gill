@@ -30,3 +30,6 @@ jarvis_keys.txt
 *.log
 nul
 
+
+.vercel
+.env*

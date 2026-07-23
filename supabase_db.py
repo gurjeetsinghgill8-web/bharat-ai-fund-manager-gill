@@ -353,14 +353,15 @@ def clear_scan_cache():
 # ---------------------------------------------------------------------------
 
 def save_gurjas_results(screener: str, results: list[dict]):
-    _delete("gurjas_results", {"screener": screener})
+    clean_screener = screener.replace(" ", "").upper()
+    _delete("gurjas_results", {"screener": clean_screener})
     if not results:
         return
 
     now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
     rows = [
         {
-            "screener":   screener,
+            "screener":   clean_screener,
             "symbol":     r.get("symbol") or r.get("ticker", ""),
             "data":       _make_serializable(r),
             "scanned_at": now_str,
@@ -370,13 +371,14 @@ def save_gurjas_results(screener: str, results: list[dict]):
     for i in range(0, len(rows), 500):
         _post("gurjas_results", rows[i:i + 500])
 
-    print(f"[Supabase] Saved {len(results)} {screener} results")
+    print(f"[Supabase] Saved {len(results)} {clean_screener} results")
 
 
 def load_gurjas_results(screener: str) -> list[dict]:
+    clean_screener = screener.replace(" ", "").upper()
     rows = _get("gurjas_results", {
         "select": "symbol,data,scanned_at",
-        "screener": f"eq.{screener}",
+        "screener": f"eq.{clean_screener}",
         "order": "scanned_at.desc",
         "limit": "1000",
     })

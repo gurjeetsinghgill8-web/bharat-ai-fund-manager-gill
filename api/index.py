@@ -175,6 +175,21 @@ def get_scan_status():
         "scan_mode": meta.get("scan_mode", "Full Universe"),
     }
 
+@app.get("/stocks")
+@app.get("/api/stocks")
+def get_stock_symbols():
+    """Returns all stock ticker symbols for auto-complete."""
+    try:
+        tickers = get_all_tickers(use_full=True)
+        symbols = sorted([t.replace(".NS", "") for t in tickers])
+        return {"count": len(symbols), "symbols": symbols}
+    except Exception as e:
+        print(f"Error fetching stock symbols: {e}")
+        # Fallback to core stocks
+        tickers = get_all_tickers(use_full=False)
+        symbols = sorted([t.replace(".NS", "") for t in tickers])
+        return {"count": len(symbols), "symbols": symbols}
+
 @app.get("/scan/results/gurjas1")
 @app.get("/api/scan/results/gurjas1")
 def get_gurjas1_results():

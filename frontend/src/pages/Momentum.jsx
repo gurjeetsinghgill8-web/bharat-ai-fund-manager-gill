@@ -7,6 +7,7 @@ export default function Momentum() {
   const [stocks, setStocks]     = useState([]);
   const [loading, setLoading]   = useState(true);
   const [scanning, setScanning] = useState(false);
+  const [scanStatus, setScanStatus] = useState(null);
   const [filter, setFilter]     = useState('all');
   const [search, setSearch]     = useState('');
   const [sortKey, setSortKey]   = useState('momentum_score');
@@ -18,6 +19,7 @@ export default function Momentum() {
     try {
       // Fetch all scan cache and filter for momentum stocks
       const s = await getScanStatus();
+      setScanStatus(s.data);
       // Load raw scored results from gurjas endpoints and derive momentum
       const [g1, g2] = await Promise.all([
         api.get('/api/scan/results/gurjas1'),
@@ -132,6 +134,26 @@ export default function Momentum() {
         {error && (
           <div className="scan-banner warning">⚠️ {error}
             <button className="btn btn-sm btn-outline" onClick={() => setError('')}>✕</button>
+          </div>
+        )}
+
+        {/* Scan Info */}
+        {scanStatus && (
+          <div className="scan-banner" style={{ marginBottom: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+              <strong style={{ color: 'var(--blue)' }}>📡 Scan</strong>
+              {' · '}
+              <span>{scanStatus.total_stocks?.toLocaleString() || 0} stocks</span>
+              {scanStatus.last_scan_time && (
+                <span> · {new Date(scanStatus.last_scan_time).toLocaleString('en-IN')}</span>
+              )}
+              {scanStatus.scan_running && (
+                <span style={{ color: 'var(--gold)', marginLeft: 8 }}>
+                  <span className="spinner" style={{ width: 10, height: 10, display: 'inline-block' }} /> Running...
+                </span>
+              )}
+            </div>
+            <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>yfinance + screener.in</div>
           </div>
         )}
 

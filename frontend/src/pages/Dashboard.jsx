@@ -1,9 +1,9 @@
 // src/pages/Dashboard.jsx — Page 1: Portfolio Dashboard
-import { useState, useEffect, useCallback } from 'react';
-import { getPortfolio, addHolding, removeHolding, syncPortfolios, getAnalysis, getScanStatus } from '../api';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { getPortfolio, addHolding, removeHolding, syncPortfolios, getAnalysis, getScanStatus, getStocks } from '../api';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
 
-const COLORS = ['#00D4FF', '#FFD700', '#00E676', '#FF9F43', '#FF4757', '#A29BFE', '#FD79A8', '#74B9FF'];
+const COLORS = ['#00D4FF', '#FFD700', '#00E676', '#FF9F43', '#FF4757', '#A29BFE', '#FD79A8', '#74BFF9'];
 
 function plPct(h) {
   if (!h.buy_price || !h.ltp) return 0;
@@ -29,6 +29,14 @@ export default function Dashboard({ userId = 1 }) {
   const [analysisLoading, setAnalysisLoading] = useState({});
   const [error, setError] = useState('');
 
+  // Auto-complete state
+  const [allStocks, setAllStocks] = useState([]);
+  const [suggestions, setSuggestions] = useState([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [stocksLoaded, setStocksLoaded] = useState(false);
+  const inputRef = useRef(null);
+  const suggestRef = useRef(null);
+
   const fetchPortfolio = useCallback(async () => {
     try {
       const r = await getPortfolio(userId);
@@ -40,10 +48,52 @@ export default function Dashboard({ userId = 1 }) {
     }
   }, [userId]);
 
+  // Fetch stock list for auto-complete
+  useEffect(() => {
+    getStocks().then(r => {
+      setAllStocks(r.data.symbols || []);
+      setStocksLoaded(true);
+    }).catch(() => {});
+  }, []);
+
   useEffect(() => {
     fetchPortfolio();
     getScanStatus().then(r => setScanStatus(r.data)).catch(() => {});
   }, [fetchPortfolio]);
+
+  // Close suggestions when clicking outside
+  useEffect(() => {
+    function handleClick(e) {
+      if (suggestRef.current && !suggestRef.current.contains(e.target) &&
+          inputRef.current && !inputRef.current.contains(e.target)) {
+        setShowSuggestions(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
+
+  function handleSymbolChange(value) {
+    const upper = value.toUpperCase();
+    setForm(p => ({ ...p, symbol: upper }));
+
+    if (upper.length < 1) {
+      setSuggestions([]);
+      setShowSuggestions(false);
+      return;
+    }
+
+    const matches = allStocks
+      .filter(s => s.includes(upper))
+      .slice(0, 20);
+    setSuggestions(matches);
+    setShowSuggestions(matches.length > 0);
+  }
+
+  function selectSymbol(sym) {
+    setForm(p => ({ ...p, symbol: sym }));
+    setShowSuggestions(false);
+  }
 
   async function handleAdd(e) {
     e.preventDefault();
@@ -104,7 +154,9 @@ export default function Dashboard({ userId = 1 }) {
         <div>
           <h1>📊 Portfolio Dashboard</h1>
           <div className="page-subtitle">
-            {scanStatus?.last_scan ? `Last scan: ${new Date(scanStatus.last_scan).toLocaleString('en-IN')}` : 'No scan data yet'}
+            {scanStatus?.last_scan
+              ? `Last scan: ${new Date(scanStatus.last_scan).toLocaleString('en-IN')}`
+              : 'No scan data yet'}
           </div>
         </div>
         <button className="btn btn-primary" onClick={handleSync} disabled={syncing}>
@@ -117,6 +169,29 @@ export default function Dashboard({ userId = 1 }) {
           <div className="scan-banner warning" style={{ marginBottom: 20 }}>
             ⚠️ {error}
             <button className="btn btn-sm btn-outline" onClick={() => setError('')}>Dismiss</button>
+          </div>
+        )}
+
+        {/* Scan Info Banner */}
+        {scanStatus && (
+          <div className="scan-banner" style={{ marginBottom: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+              <strong style={{ color: 'var(--blue)' }}>📡 Scan Status</strong>
+              {' · '}
+              <span>{scanStatus.total_stocks?.toLocaleString() || 0} stocks scanned</span>
+              {scanStatus.scan_mode && <span> · Mode: {scanStatus.scan_mode}</span>}
+              {scanStatus.last_scan_time && (
+                <span> · Last: {new Date(scanStatus.last_scan_time).toLocaleString('en-IN')}</span>
+              )}
+              {scanStatus.scan_running && (
+                <span style={{ color: 'var(--gold)', marginLeft: 8 }}>
+                  <span className="spinner" style={{ width: 10, height: 10, display: 'inline-block' }} /> Scan running...
+                </span>
+              )}
+            </div>
+            <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+              Data: yfinance + screener.in
+            </div>
           </div>
         )}
 
@@ -151,15 +226,44 @@ export default function Dashboard({ userId = 1 }) {
           <div className="card">
             <div className="card-title">➕ Add Holding</div>
             <form onSubmit={handleAdd}>
-              <div style={{ marginBottom: 10 }}>
-                <div className="input-label">Stock Symbol (e.g. RELIANCE)</div>
+              <div style={{ marginBottom: 10, position: 'relative' }}>
+                <div className="input-label">Stock Symbol</div>
                 <input
+                  ref={inputRef}
                   className="input"
-                  placeholder="RELIANCE"
+                  placeholder="Type symbol — RELIANCE, TCS, HDFCBANK..."
                   value={form.symbol}
-                  onChange={e => setForm(p => ({ ...p, symbol: e.target.value.toUpperCase() }))}
+                  onChange={e => handleSymbolChange(e.target.value)}
+                  onFocus={() => form.symbol.length >= 1 && suggestions.length > 0 && setShowSuggestions(true)}
                   required
+                  autoComplete="off"
                 />
+                {showSuggestions && (
+                  <div ref={suggestRef} style={{
+                    position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 100,
+                    background: 'var(--bg-card)', border: '1px solid var(--border-bright)',
+                    borderRadius: 'var(--radius-sm)', maxHeight: 250, overflowY: 'auto',
+                    marginTop: 2, boxShadow: '0 8px 24px rgba(0,0,0,0.4)'
+                  }}>
+                    {suggestions.map(s => (
+                      <div key={s} onClick={() => selectSymbol(s)} style={{
+                        padding: '8px 12px', cursor: 'pointer', fontSize: 13,
+                        borderBottom: '1px solid var(--border)', color: 'var(--text-primary)',
+                        transition: 'background 0.15s'
+                      }}
+                        onMouseEnter={e => e.target.style.background = 'var(--bg-card-hover)'}
+                        onMouseLeave={e => e.target.style.background = 'transparent'}
+                      >
+                        {s}
+                      </div>
+                    ))}
+                    {!stocksLoaded && (
+                      <div style={{ padding: '8px 12px', fontSize: 11, color: 'var(--text-muted)' }}>
+                        Loading stock list...
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
               <div className="input-group">
                 <div style={{ flex: 1 }}>

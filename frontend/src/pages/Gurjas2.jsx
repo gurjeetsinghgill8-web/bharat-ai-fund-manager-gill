@@ -3,6 +3,33 @@
 import { useState, useEffect } from 'react';
 import { getGurjas2, getScanStatus, triggerScan } from '../api';
 
+// ── Key mappings for each sortable column ───────────────────
+const COL_KEYS = {
+  symbol:           ['symbol', 'ticker', 'Symbol', 'Ticker', 'symbol_name'],
+  sales_cagr_3y:    ['sales_cagr_3y', 'Sales CAGR 3Y', 'sales_3y'],
+  sales_cagr_5y:    ['sales_cagr_5y', 'Sales CAGR 5Y', 'sales_5y'],
+  sales_cagr_all:   ['sales_cagr_all', 'Sales CAGR', 'sales_all'],
+  profit_cagr_3y:   ['profit_cagr_3y', 'Profit CAGR 3Y', 'profit_3y'],
+  profit_cagr_all:  ['profit_cagr_all', 'Profit CAGR', 'profit_all'],
+  peg:              ['peg', 'PEG Ratio', 'peg_ratio'],
+  mcap:             ['mcap', 'MCap', 'market_cap', 'Market Cap (Cr)'],
+  ltp:              ['ltp', 'LTP', 'current_price', 'Price'],
+};
+
+function getCol(s, keys) {
+  for (const k of keys) if (s[k] !== undefined && s[k] !== null) return s[k];
+  return null;
+}
+
+function getSortVal(s, sortKey) {
+  if (sortKey === 'symbol') {
+    const v = getCol(s, COL_KEYS.symbol) || '';
+    return v.toUpperCase();
+  }
+  const keys = COL_KEYS[sortKey] || [sortKey];
+  return parseFloat(getCol(s, keys)) || 0;
+}
+
 export default function Gurjas2() {
   const [stocks, setStocks]     = useState([]);
   const [loading, setLoading]   = useState(true);
@@ -41,36 +68,34 @@ export default function Gurjas2() {
     else { setSortKey(key); setSortDir('desc'); }
   }
 
-  function getCol(s, keys) {
-    for (const k of keys) if (s[k] !== undefined && s[k] !== null) return s[k];
-    return null;
-  }
-
   const filtered = stocks
     .filter(s => {
-      const sym = (s.symbol || s.ticker || s.Symbol || s.Ticker || '').toUpperCase();
-      const mcap = parseFloat(getCol(s, ['mcap', 'MCap', 'market_cap', 'Market Cap (Cr)']));
-      const passSearch = sym.includes(search.toUpperCase());
+      const sym = getCol(s, COL_KEYS.symbol) || '';
+      const mcap = parseFloat(getCol(s, COL_KEYS.mcap));
+      const passSearch = sym.toUpperCase().includes(search.toUpperCase());
       const passMcap = minMcap ? (!isNaN(mcap) && mcap >= parseFloat(minMcap)) : true;
       return passSearch && passMcap;
     })
     .sort((a, b) => {
       if (!sortKey) return 0;
-      const av = parseFloat(a[sortKey]) || 0;
-      const bv = parseFloat(b[sortKey]) || 0;
+      const av = getSortVal(a, sortKey);
+      const bv = getSortVal(b, sortKey);
+      if (typeof av === 'string') {
+        return sortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
+      }
       return sortDir === 'asc' ? av - bv : bv - av;
     });
 
   const Th = ({ k, label }) => (
     <th onClick={() => handleSort(k)} style={{ cursor: 'pointer', userSelect: 'none' }}>
-      {label} {sortKey === k ? (sortDir === 'asc' ? '↑' : '↓') : ''}
+      {label} {sortKey === k ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ' ↕'}
     </th>
   );
 
   // MCap distribution stats
-  const largeCap  = stocks.filter(s => parseFloat(getCol(s, ['mcap', 'MCap', 'market_cap', 'Market Cap (Cr)'])) >= 20000).length;
-  const midCap    = stocks.filter(s => { const m = parseFloat(getCol(s, ['mcap', 'MCap', 'market_cap', 'Market Cap (Cr)'])); return m >= 5000 && m < 20000; }).length;
-  const smallCap  = stocks.filter(s => parseFloat(getCol(s, ['mcap', 'MCap', 'market_cap', 'Market Cap (Cr)'])) < 5000).length;
+  const largeCap  = stocks.filter(s => parseFloat(getCol(s, COL_KEYS.mcap)) >= 20000).length;
+  const midCap    = stocks.filter(s => { const m = parseFloat(getCol(s, COL_KEYS.mcap)); return m >= 5000 && m < 20000; }).length;
+  const smallCap  = stocks.filter(s => parseFloat(getCol(s, COL_KEYS.mcap)) < 5000).length;
 
   return (
     <>
@@ -93,6 +118,29 @@ export default function Gurjas2() {
         {error && (
           <div className="scan-banner warning">⚠️ {error}
             <button className="btn btn-sm btn-outline" onClick={() => setError('')}>✕</button>
+          </div>
+        )}
+
+        {/* Scan Info Banner */}
+        {scanStatus && (
+          <div className="scan-banner" style={{ marginBottom: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+              <strong style={{ color: 'var(--gold)' }}>📡 Scan Status</strong>
+              {' · '}
+              <span>{scanStatus.total_stocks?.toLocaleString() || 0} stocks analysed</span>
+              {scanStatus.scan_mode && <span> · Mode: {scanStatus.scan_mode}</span>}
+              {scanStatus.last_scan_time && (
+                <span> · Refresh: {new Date(scanStatus.last_scan_time).toLocaleString('en-IN')}</span>
+              )}
+              {scanStatus.scan_running && (
+                <span style={{ color: 'var(--gold)', marginLeft: 8 }}>
+                  <span className="spinner" style={{ width: 10, height: 10, display: 'inline-block' }} /> Scan running...
+                </span>
+              )}
+            </div>
+            <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+              Data: yfinance + screener.in
+            </div>
           </div>
         )}
 
@@ -169,16 +217,16 @@ export default function Gurjas2() {
                 </thead>
                 <tbody>
                   {filtered.map((s, i) => {
-                    const rawSym = getCol(s, ['symbol', 'ticker', 'Symbol', 'Ticker', 'symbol_name']) || '';
+                    const rawSym = getCol(s, COL_KEYS.symbol) || '';
                     const sym = rawSym.replace('.NS', '');
-                    const s3  = parseFloat(getCol(s, ['sales_cagr_3y', 'Sales CAGR 3Y']));
-                    const s5  = parseFloat(getCol(s, ['sales_cagr_5y', 'Sales CAGR 5Y']));
-                    const sa  = parseFloat(getCol(s, ['sales_cagr_all', 'Sales CAGR']));
-                    const p3  = parseFloat(getCol(s, ['profit_cagr_3y', 'Profit CAGR 3Y']));
-                    const pa  = parseFloat(getCol(s, ['profit_cagr_all', 'Profit CAGR']));
-                    const peg = parseFloat(getCol(s, ['peg', 'PEG Ratio']));
-                    const mc  = parseFloat(getCol(s, ['mcap', 'MCap', 'market_cap', 'Market Cap (Cr)']));
-                    const ltp = parseFloat(getCol(s, ['ltp', 'LTP', 'current_price', 'Price']));
+                    const s3  = parseFloat(getCol(s, COL_KEYS.sales_cagr_3y));
+                    const s5  = parseFloat(getCol(s, COL_KEYS.sales_cagr_5y));
+                    const sa  = parseFloat(getCol(s, COL_KEYS.sales_cagr_all));
+                    const p3  = parseFloat(getCol(s, COL_KEYS.profit_cagr_3y));
+                    const pa  = parseFloat(getCol(s, COL_KEYS.profit_cagr_all));
+                    const peg = parseFloat(getCol(s, COL_KEYS.peg));
+                    const mc  = parseFloat(getCol(s, COL_KEYS.mcap));
+                    const ltp = parseFloat(getCol(s, COL_KEYS.ltp));
                     const stars = parseInt(getCol(s, ['Grand Total Stars', 'grand_total_stars', 'total_stars', 'Stars (Total)'])) || 0;
                     const aboveDma = getCol(s, ['above_200dma', 'above_sma', 'price_above_dma', 'Is Above 200 SMA']);
 

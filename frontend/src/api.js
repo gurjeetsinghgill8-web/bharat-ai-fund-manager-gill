@@ -26,6 +26,9 @@ export const getGurjas1     = () => api.get('/api/scan/results/gurjas1');
 export const getGurjas2     = () => api.get('/api/scan/results/gurjas2');
 export const getStockData   = (ticker) => api.get(`/api/scan/cache/${ticker}`);
 
+// ── Stocks List (for auto-complete) ──────────────────────────
+export const getStocks      = () => api.get('/api/stocks');
+
 // ── Users ─────────────────────────────────────────────────────
 export const getUsers       = () => api.get('/api/users');
 export const createUser     = (name, email) => api.post('/api/users', { name, email });

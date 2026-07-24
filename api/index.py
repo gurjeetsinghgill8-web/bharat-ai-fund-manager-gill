@@ -27,15 +27,10 @@ try:
     import supabase_db as db
     from symbols import get_all_tickers
     from llm_harness import generate_ai_narrative, has_active_api_key
-    from portfolio_manager import update_portfolio_prices
 except ImportError:
     from api import supabase_db as db
     from api.symbols import get_all_tickers
     from api.llm_harness import generate_ai_narrative, has_active_api_key
-    try:
-        from api.portfolio_manager import update_portfolio_prices
-    except ImportError:
-        update_portfolio_prices = None
 
 API_SECRET = os.getenv("FASTAPI_SECRET_KEY", "bharat-ai-secret-2026")
 _scan_running = False
@@ -294,8 +289,10 @@ def delete_portfolio_holding(user_id: int, symbol: str):
 @app.post("/api/portfolio/sync")
 def sync_portfolio_prices():
     try:
-        if update_portfolio_prices is None:
-            raise RuntimeError("portfolio_manager module not available")
+        try:
+            from portfolio_manager import update_portfolio_prices
+        except ImportError:
+            from api.portfolio_manager import update_portfolio_prices
         users = db.get_all_users()
         synced_users = []
         for u in users:

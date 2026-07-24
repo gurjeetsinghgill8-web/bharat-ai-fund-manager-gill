@@ -15,8 +15,6 @@ Key changes from v1:
 import os
 import json
 import datetime
-import yfinance as yf
-import pandas as pd
 
 try:
     from supabase_db import (
@@ -138,6 +136,7 @@ def fetch_ltp_and_sma(ticker):
         (ltp, sma_200) or (None, None) on failure.
     """
     try:
+        import yfinance as yf
         t = yf.Ticker(ticker)
         hist = t.history(period="1y")
         if hist.empty:

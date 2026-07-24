@@ -63,12 +63,21 @@ def _headers(prefer: str = "") -> dict:
     return h
 
 
-def _client() -> "httpx.Client":
-    """Returns a configured httpx client with 30s timeout."""
-    return httpx.Client(timeout=httpx.Timeout(30.0, connect=15.0))
+_SESSION: Optional["httpx.Client"] = None
 
 
-def _execute_with_retry(func, retries=3):
+def _get_client() -> "httpx.Client":
+    """Returns a shared, persistent httpx.Client with connection pooling."""
+    global _SESSION
+    if _SESSION is None or _SESSION.is_closed:
+        _SESSION = httpx.Client(
+            timeout=httpx.Timeout(6.0, connect=3.0),
+            limits=httpx.Limits(max_keepalive_connections=10, max_connections=20),
+        )
+    return _SESSION
+
+
+def _execute_with_retry(func, retries=2):
     """Executes a request function with up to N retries on timeout/network errors."""
     for attempt in range(retries):
         try:
@@ -77,17 +86,17 @@ def _execute_with_retry(func, retries=3):
             if attempt == retries - 1:
                 raise
             import time
-            time.sleep(0.5 * (attempt + 1))
+            time.sleep(0.2 * (attempt + 1))
 
 
 def _get(table: str, params: dict = None) -> list[dict]:
     """SELECT from a table."""
     _require_config()
     def op():
-        with _client() as c:
-            r = c.get(f"{REST_BASE}/{table}", headers=_headers(), params=params or {})
-            r.raise_for_status()
-            return r.json()
+        c = _get_client()
+        r = c.get(f"{REST_BASE}/{table}", headers=_headers(), params=params or {})
+        r.raise_for_status()
+        return r.json()
     return _execute_with_retry(op)
 
 
@@ -95,16 +104,16 @@ def _post(table: str, data, prefer: str = "return=representation") -> list[dict]
     """INSERT into a table."""
     _require_config()
     def op():
-        with _client() as c:
-            r = c.post(
-                f"{REST_BASE}/{table}",
-                headers=_headers(prefer),
-                content=json.dumps(data),
-            )
-            if r.status_code >= 400:
-                print(f"[Supabase REST Error {r.status_code}] Table: {table} | Body: {r.text}")
-            r.raise_for_status()
-            return r.json() if r.text else []
+        c = _get_client()
+        r = c.post(
+            f"{REST_BASE}/{table}",
+            headers=_headers(prefer),
+            content=json.dumps(data),
+        )
+        if r.status_code >= 400:
+            print(f"[Supabase REST Error {r.status_code}] Table: {table} | Body: {r.text}")
+        r.raise_for_status()
+        return r.json() if r.text else []
     return _execute_with_retry(op)
 
 
@@ -113,15 +122,15 @@ def _patch(table: str, filters: dict, data: dict) -> list[dict]:
     _require_config()
     params = {k: f"eq.{v}" for k, v in filters.items()}
     def op():
-        with _client() as c:
-            r = c.patch(
-                f"{REST_BASE}/{table}",
-                headers=_headers("return=representation"),
-                params=params,
-                content=json.dumps(data),
-            )
-            r.raise_for_status()
-            return r.json() if r.text else []
+        c = _get_client()
+        r = c.patch(
+            f"{REST_BASE}/{table}",
+            headers=_headers("return=representation"),
+            params=params,
+            content=json.dumps(data),
+        )
+        r.raise_for_status()
+        return r.json() if r.text else []
     return _execute_with_retry(op)
 
 
@@ -130,9 +139,9 @@ def _delete(table: str, filters: dict):
     _require_config()
     params = {k: f"eq.{v}" for k, v in filters.items()}
     def op():
-        with _client() as c:
-            r = c.delete(f"{REST_BASE}/{table}", headers=_headers(), params=params)
-            r.raise_for_status()
+        c = _get_client()
+        r = c.delete(f"{REST_BASE}/{table}", headers=_headers(), params=params)
+        r.raise_for_status()
     return _execute_with_retry(op)
 
 
@@ -144,17 +153,17 @@ def _upsert(table: str, data, on_conflict: str = "") -> list[dict]:
     if on_conflict:
         params["on_conflict"] = on_conflict
     def op():
-        with _client() as c:
-            r = c.post(
-                f"{REST_BASE}/{table}",
-                headers=_headers(prefer),
-                params=params,
-                content=json.dumps(data),
-            )
-            if r.status_code >= 400:
-                print(f"[Supabase REST Error {r.status_code}] Table: {table} | Body: {r.text}")
-            r.raise_for_status()
-            return r.json() if r.text else []
+        c = _get_client()
+        r = c.post(
+            f"{REST_BASE}/{table}",
+            headers=_headers(prefer),
+            params=params,
+            content=json.dumps(data),
+        )
+        if r.status_code >= 400:
+            print(f"[Supabase REST Error {r.status_code}] Table: {table} | Body: {r.text}")
+        r.raise_for_status()
+        return r.json() if r.text else []
     return _execute_with_retry(op)
 
 

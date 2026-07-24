@@ -37,7 +37,7 @@ export const updateEmail    = (userId, email) => api.put(`/api/users/${userId}/e
 // ── Portfolio ─────────────────────────────────────────────────
 export const getPortfolio   = (userId) => api.get(`/api/portfolio/${userId}`);
 export const addHolding     = (userId, symbol, buy_price, quantity) =>
-  api.post(`/api/portfolio/${userId}/add`, { symbol, buy_price, quantity });
+  api.post(`/api/portfolio/${userId}/add`, { user_id: userId, symbol, buy_price, quantity });
 export const removeHolding  = (userId, symbol) =>
   api.delete(`/api/portfolio/${userId}/${symbol}`);
 export const syncPortfolios = () => api.post('/api/portfolio/sync');

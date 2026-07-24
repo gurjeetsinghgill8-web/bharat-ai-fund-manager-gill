@@ -238,8 +238,10 @@ def get_portfolio(user_id: int):
     return {"user_id": user_id, "count": len(holdings), "holdings": holdings}
 
 @app.post("/api/portfolio/add")
-def add_portfolio_holding(h: HoldingAdd):
-    holdings = db.load_portfolio_db(h.user_id)
+@app.post("/api/portfolio/{user_id}/add")
+def add_portfolio_holding(h: HoldingAdd, user_id: Optional[int] = None):
+    target_user = user_id if user_id is not None else h.user_id
+    holdings = db.load_portfolio_db(target_user)
     new_h = {
         "symbol": h.symbol.upper(),
         "buy_price": h.buy_price,
@@ -249,15 +251,15 @@ def add_portfolio_holding(h: HoldingAdd):
     }
     updated = [x for x in holdings if x.get("symbol") != new_h["symbol"]]
     updated.append(new_h)
-    db.save_portfolio_db(h.user_id, updated)
-    return {"status": "added", "symbol": new_h["symbol"], "total_holdings": len(updated)}
+    db.save_portfolio_db(target_user, updated)
+    return {"status": "added", "symbol": new_h["symbol"], "count": len(updated), "holdings": updated}
 
 @app.delete("/api/portfolio/{user_id}/{symbol}")
 def delete_portfolio_holding(user_id: int, symbol: str):
     holdings = db.load_portfolio_db(user_id)
     updated = [x for x in holdings if x.get("symbol") != symbol.upper()]
     db.save_portfolio_db(user_id, updated)
-    return {"status": "deleted", "symbol": symbol.upper(), "remaining": len(updated)}
+    return {"status": "deleted", "symbol": symbol.upper(), "remaining": len(updated), "holdings": updated}
 
 @app.post("/api/portfolio/sync")
 def sync_portfolio_prices():
@@ -276,16 +278,24 @@ def sync_portfolio_prices():
             synced_users.append(u["name"])
     return {"status": "synced", "users_synced": synced_users}
 
-@app.post("/api/ai/ask")
-def ask_jarvis_ai(req: StockAsk):
+@app.get("/api/scan/cache/{ticker}")
+def get_stock_cache(ticker: str):
     cache = db.load_scan_cache()
-    stock_info = cache.get(req.symbol.upper(), {})
+    stock_info = cache.get(ticker.upper(), {})
+    return {"symbol": ticker.upper(), "data": stock_info}
+
+@app.get("/api/analysis/{symbol}")
+@app.post("/api/ai/ask")
+def ask_jarvis_ai(symbol: Optional[str] = None, req: Optional[StockAsk] = None):
+    sym = (symbol or (req.symbol if req else "")).upper()
+    cache = db.load_scan_cache()
+    stock_info = cache.get(sym, {})
     if not stock_info:
-        stock_info = {"symbol": req.symbol.upper(), "ltp": 0.0}
+        stock_info = {"symbol": sym, "ltp": 0.0}
     
-    analysis = generate_ai_narrative(req.symbol.upper(), stock_info)
+    analysis = generate_ai_narrative(sym, stock_info)
     return {
-        "symbol": req.symbol.upper(),
+        "symbol": sym,
         "ai_active": has_active_api_key(),
         "analysis": analysis,
     }

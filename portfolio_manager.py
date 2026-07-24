@@ -130,17 +130,23 @@ def remove_holding(symbol, user_id=None):
 def fetch_ltp_and_sma(ticker):
     """
     Lightweight fetch: gets current price and 200-day SMA for a ticker.
-    Uses only ~1 year of price history (no financial statements).
+    Automatically appends .NS suffix for Indian NSE stock tickers.
     
     Returns:
         (ltp, sma_200) or (None, None) on failure.
     """
     try:
         import yfinance as yf
-        t = yf.Ticker(ticker)
+        sym = ticker.strip().upper()
+        if not sym.endswith(".NS") and not sym.endswith(".BO"):
+            sym = f"{sym}.NS"
+
+        t = yf.Ticker(sym)
         hist = t.history(period="1y")
         if hist.empty:
-            hist = t.history(period="6mo")
+            # Fallback to .BO (BSE)
+            base_sym = ticker.strip().upper().replace(".NS", "").replace(".BO", "")
+            hist = yf.Ticker(f"{base_sym}.BO").history(period="1y")
         if hist.empty:
             return None, None
         

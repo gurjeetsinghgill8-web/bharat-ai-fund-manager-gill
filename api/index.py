@@ -246,12 +246,51 @@ def _add_holding_logic(user_id: int, h: HoldingAdd):
     try:
         target_user = user_id if user_id else (h.user_id if h.user_id else 1)
         holdings = db.load_portfolio_db(target_user)
+        sym = h.symbol.strip().upper()
+
+        ltp, sma = None, None
+        try:
+            cache = db.load_scan_cache()
+            for key in [sym, f"{sym}.NS"]:
+                if key in cache and cache[key].get("ltp"):
+                    ltp = float(cache[key].get("ltp"))
+                    sma = float(cache[key].get("sma_200", cache[key].get("dma_200", 0.0)))
+                    break
+        except Exception:
+            pass
+
+        if ltp is None:
+            try:
+                from portfolio_manager import fetch_ltp_and_sma
+                ltp, sma = fetch_ltp_and_sma(sym)
+            except Exception:
+                pass
+
+        final_ltp = float(ltp) if ltp else float(h.buy_price)
+        final_sma = float(sma) if sma else 0.0
+        above = final_ltp >= final_sma if final_sma > 0 else True
+        dist = round(((final_ltp - final_sma) / final_sma) * 100.0, 2) if final_sma > 0 else 0.0
+
+        signal = "WAIT"
+        if final_sma > 0:
+            if not above:
+                signal = "EXIT"
+            elif dist < 15:
+                signal = "BUY"
+            else:
+                signal = "HOLD"
+
         new_h = {
-            "symbol": h.symbol.upper(),
+            "symbol": sym,
             "buy_price": float(h.buy_price),
             "quantity": float(h.quantity),
             "buy_date": h.buy_date or datetime.date.today().isoformat(),
-            "ltp": float(h.buy_price),
+            "ltp": final_ltp,
+            "sma_200": final_sma,
+            "above_sma": above,
+            "dist_pct": dist,
+            "signal": signal,
+            "signal_strength": 3 if signal != "WAIT" else 0,
         }
         updated = [x for x in holdings if x.get("symbol") != new_h["symbol"]]
         updated.append(new_h)

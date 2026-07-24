@@ -349,7 +349,7 @@ export default function Dashboard({ userId = 1 }) {
                           <td>₹{h.buy_price?.toLocaleString('en-IN')}</td>
                           <td>{h.quantity}</td>
                           <td>₹{h.ltp?.toLocaleString('en-IN') || '—'}</td>
-                          <td>₹{h.sma_200?.toFixed(0) || '—'}</td>
+                          <td>{h.sma_200 > 0 ? `₹${h.sma_200.toLocaleString('en-IN', { maximumFractionDigits: 0 })}` : '—'}</td>
                           <td>
                             {h.sma_200 > 0 ? (
                               <span className={`badge ${h.above_sma ? 'badge-green' : 'badge-red'}`}>

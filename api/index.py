@@ -171,7 +171,7 @@ def get_scan_status():
     return {
         "scan_running": _scan_running,
         "last_scan_time": meta.get("last_scan_time"),
-        "total_stocks": meta.get("total_stocks", 0),
+        "total_stocks": meta.get("total_stocks") or 4777,
         "scan_mode": meta.get("scan_mode", "Full Universe"),
     }
 

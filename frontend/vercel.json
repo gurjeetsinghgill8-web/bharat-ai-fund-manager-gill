@@ -4,7 +4,7 @@
   "framework": "vite",
   "functions": {
     "api/index.py": {
-      "runtime": "python3.12",
+      "runtime": "@vercel/python",
       "includeFiles": "../api/**,../*.py,../requirements.txt"
     }
   },

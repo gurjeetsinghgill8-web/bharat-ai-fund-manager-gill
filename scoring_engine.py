@@ -166,17 +166,17 @@ def score_stock(stock_data):
     Applies the scoring rules to a single stock's data.
     Returns a dict with scores and metadata.
     """
-    ticker = stock_data["ticker"]
-    current_price = stock_data["current_price"]
-    ath = stock_data["ath"]
-    three_year_high = stock_data["three_year_high"]
-    sales_hist = stock_data["sales_history"]
-    profit_hist = stock_data["profit_history"]
-    quarterly_profits = stock_data["quarterly_profits"]
-    pe = stock_data["pe"]
-    eps = stock_data["eps"]
-    debt_eq = stock_data["debt_to_equity"]
-    market_cap_cr = stock_data.get("market_cap_cr", 0.0)
+    ticker = stock_data.get("ticker", "")
+    current_price = stock_data.get("current_price", 0.0) or 0.0
+    ath = stock_data.get("ath", current_price) or current_price
+    three_year_high = stock_data.get("three_year_high", ath) or ath
+    sales_hist = stock_data.get("sales_history") or []
+    profit_hist = stock_data.get("profit_history") or []
+    quarterly_profits = stock_data.get("quarterly_profits") or []
+    pe = stock_data.get("pe", 0.0) or 0.0
+    eps = stock_data.get("eps", 0.0) or 0.0
+    debt_eq = stock_data.get("debt_to_equity", 0.0) or 0.0
+    market_cap_cr = stock_data.get("market_cap_cr", 0.0) or 0.0
     
     # 1. Price Momentum (5 Marks) - Excluded from Total Score per Gurjas's simplified logic
     price_score = 0
@@ -225,7 +225,7 @@ def score_stock(stock_data):
         red_reasons.append("Negative Reserves")
 
     # 7. Continuous High Performance Check (1m, 2m, 6m)
-    price_hist = stock_data["price_history_6m"]
+    price_hist = stock_data.get("price_history_6m") or []
     momentum_status = "Normal"
     if price_hist:
         days_30 = [x for x in (price_hist[-21:] if len(price_hist) >= 21 else price_hist) if x is not None]
@@ -324,19 +324,27 @@ def score_stock(stock_data):
 
     return {
         "Ticker": ticker,
+        "symbol": ticker,
         "Category": get_category(ticker),
         "Sector": sector,
         "Industry": industry,
         "Exchange": exchange,
-        "Price": round(current_price, 2),
+        "Price": round(current_price, 2) if current_price else 0.0,
+        "ltp": round(current_price, 2) if current_price else 0.0,
+        "LTP": round(current_price, 2) if current_price else 0.0,
         "200 SMA": round(sma_200, 2) if sma_200 else 0.0,
+        "sma_200": round(sma_200, 2) if sma_200 else 0.0,
+        "200 DMA": round(sma_200, 2) if sma_200 else 0.0,
         "200 SMA Dist %": round(dist_pct, 2) if sma_200 else 0.0,
+        "dist_pct": round(dist_pct, 2) if sma_200 else 0.0,
         "ATH": round(ath, 2),
         "3Y High": round(three_year_high, 2),
         "PE": round(float(pe), 2) if (isinstance(pe, (int, float)) or (isinstance(pe, str) and pe.replace('.', '', 1).isdigit())) else 0.0,
         "EPS": round(float(eps), 2) if (isinstance(eps, (int, float)) or (isinstance(eps, str) and eps.replace('.', '', 1).isdigit())) else 0.0,
         "PEG Ratio": peg_ratio,
+        "peg": peg_ratio,
         "Market Cap (Cr)": market_cap_cr,
+        "mcap": market_cap_cr,
         "Price Score": price_score,
         "Sales Score": sales_score,
         "Profit Score": profit_score,

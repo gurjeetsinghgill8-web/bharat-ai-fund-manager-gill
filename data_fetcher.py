@@ -54,6 +54,8 @@ def fetch_stock_data(ticker, force_refresh=False):
     Fetches raw stock data from yfinance and returns a structured dictionary.
     """
     try:
+        if not ticker.endswith(".NS") and not ticker.endswith(".BO"):
+            ticker = f"{ticker}.NS"
         t = yf.Ticker(ticker)
         
         # 1. Fetch Price History

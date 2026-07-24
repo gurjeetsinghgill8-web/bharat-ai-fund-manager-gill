@@ -185,8 +185,8 @@ def get_stock_symbols():
         return {"count": len(symbols), "symbols": symbols}
     except Exception as e:
         print(f"Error fetching stock symbols: {e}")
-        # Fallback to core stocks
-        tickers = get_all_tickers(use_full=False)
+        # Fallback to full universe
+        tickers = get_all_tickers(use_full=True)
         symbols = sorted([t.replace(".NS", "") for t in tickers])
         return {"count": len(symbols), "symbols": symbols}
 

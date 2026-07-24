@@ -65,7 +65,7 @@ for cap, tickers in CORE_STOCKS.items():
 # Public API
 # ---------------------------------------------------------------------------
 
-def get_all_tickers(use_full=False, limit=None, include_bse=True):
+def get_all_tickers(use_full=True, limit=None, include_bse=True):
     """
     Returns a deduplicated list of ticker symbols with .NS suffix (and optionally .BO).
     

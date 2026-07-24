@@ -65,31 +65,25 @@ for cap, tickers in CORE_STOCKS.items():
 # Public API
 # ---------------------------------------------------------------------------
 
-def get_all_tickers(use_full=False, limit=None, include_bse=False):
+def get_all_tickers(use_full=False, limit=None, include_bse=True):
     """
     Returns a deduplicated list of ticker symbols with .NS suffix (and optionally .BO).
     
     Args:
-        use_full: If True, returns ~2000+ NSE symbols (fetched from NSE archives).
-                  If False, returns the 127 core watchlist (default).
-        limit: Optional int to limit total stocks returned (e.g., 50, 100, 500, 1000, 2000).
-               Applied AFTER combining core + NSE sets.
-        include_bse: If True, also returns BSE (.BO) tickers alongside NSE ones.
+        use_full: If True, returns full 4500+ NSE & BSE universe.
+                  If False, returns the 127 core watchlist.
+        limit: Optional int to limit total stocks returned.
+        include_bse: Default True when use_full=True.
     
     Returns:
         list of ticker strings (e.g., ["RELIANCE.NS", "TCS.NS", ..., "RELIANCE.BO", ...])
     """
     if use_full:
-        # Get full NSE list (from cache/live/fallback)
-        # For limits > 2000, include all series to get ~3000+ stocks
-        include_all = limit is not None and limit > 2000
-        full = get_nse_tickers_with_suffix(include_all_series=include_all)
-        # Ensure core stocks are always included
+        full = get_nse_tickers_with_suffix(include_all_series=True)
         core_set = set(get_all_tickers(use_full=False))
         full_set = set(full)
         combined = list(core_set | full_set)
         
-        # Add BSE tickers if requested
         if include_bse:
             bse_set = set(get_bse_tickers())
             combined = list(set(combined) | bse_set)
@@ -97,9 +91,7 @@ def get_all_tickers(use_full=False, limit=None, include_bse=False):
         else:
             print(f"Full universe: {len(combined)} stocks (core={len(core_set)}, nse={len(full_set)})")
         
-        # Apply limit if specified
         if limit is not None and limit > 0:
-            # Keep core stocks first, then fill with NSE stocks up to limit
             core_list = list(core_set)
             nse_only = [t for t in combined if t not in core_set]
             limited = core_list + nse_only[:max(0, limit - len(core_list))]

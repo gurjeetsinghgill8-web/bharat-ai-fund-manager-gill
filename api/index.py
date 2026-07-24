@@ -130,7 +130,7 @@ def _run_scan_job(universe_size: int = 0):
         except ImportError:
             from api.data_fetcher import batch_update_stocks_parallel, batch_update_stocks
             from api.scoring_engine import run_scoring
-        tickers = get_all_tickers(use_full=True, limit=universe_size) if universe_size > 0 else get_all_tickers()
+        tickers = get_all_tickers(use_full=True, limit=universe_size) if universe_size > 0 else get_all_tickers(use_full=True)
         data = batch_update_stocks_parallel(tickers, force_refresh=True, max_workers=10) if len(tickers) > 200 else batch_update_stocks(tickers, force_refresh=True)
         if data:
             db.save_scan_cache(data)

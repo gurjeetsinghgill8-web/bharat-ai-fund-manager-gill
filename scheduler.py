@@ -98,7 +98,7 @@ def execute_scan_and_report(universe_size=None):
     if universe_size and universe_size > 0:
         tickers = get_all_tickers(use_full=True, limit=universe_size)
     else:
-        tickers = get_all_tickers()
+        tickers = get_all_tickers(use_full=True)
     
     print(f"Updating data cache for {len(tickers)} stocks...")
     

@@ -2,12 +2,7 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "framework": "vite",
-  "functions": {
-    "api/index.py": {
-      "runtime": "@vercel/python",
-      "includeFiles": "../api/**,../*.py,../requirements.txt"
-    }
-  },
+
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/index.py" },
     { "source": "/(.*)", "destination": "/index.html" }

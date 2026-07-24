@@ -232,51 +232,81 @@ def create_new_user(user: UserCreate):
     uid = db.create_user(user.name, user.email)
     return {"status": "created", "user_id": uid, "name": user.name}
 
+@app.get("/portfolio/{user_id}")
 @app.get("/api/portfolio/{user_id}")
 def get_portfolio(user_id: int):
-    holdings = db.load_portfolio_db(user_id)
-    return {"user_id": user_id, "count": len(holdings), "holdings": holdings}
+    try:
+        holdings = db.load_portfolio_db(user_id)
+        return {"user_id": user_id, "count": len(holdings), "holdings": holdings}
+    except Exception as e:
+        print(f"Error loading portfolio user {user_id}: {e}\n{traceback.format_exc()}")
+        return {"user_id": user_id, "count": 0, "holdings": [], "error": str(e)}
 
+def _add_holding_logic(user_id: int, h: HoldingAdd):
+    try:
+        target_user = user_id if user_id else (h.user_id if h.user_id else 1)
+        holdings = db.load_portfolio_db(target_user)
+        new_h = {
+            "symbol": h.symbol.upper(),
+            "buy_price": float(h.buy_price),
+            "quantity": float(h.quantity),
+            "buy_date": h.buy_date or datetime.date.today().isoformat(),
+            "ltp": float(h.buy_price),
+        }
+        updated = [x for x in holdings if x.get("symbol") != new_h["symbol"]]
+        updated.append(new_h)
+        db.save_portfolio_db(target_user, updated)
+        return {"status": "added", "symbol": new_h["symbol"], "count": len(updated), "holdings": updated}
+    except Exception as e:
+        err_msg = f"Failed to add holding: {str(e)}"
+        print(f"Error adding holding: {err_msg}\n{traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=err_msg)
+
+@app.post("/portfolio/add")
 @app.post("/api/portfolio/add")
-@app.post("/api/portfolio/{user_id}/add")
-def add_portfolio_holding(h: HoldingAdd, user_id: Optional[int] = None):
-    target_user = user_id if user_id is not None else h.user_id
-    holdings = db.load_portfolio_db(target_user)
-    new_h = {
-        "symbol": h.symbol.upper(),
-        "buy_price": h.buy_price,
-        "quantity": h.quantity,
-        "buy_date": h.buy_date or datetime.date.today().isoformat(),
-        "ltp": h.buy_price,
-    }
-    updated = [x for x in holdings if x.get("symbol") != new_h["symbol"]]
-    updated.append(new_h)
-    db.save_portfolio_db(target_user, updated)
-    return {"status": "added", "symbol": new_h["symbol"], "count": len(updated), "holdings": updated}
+def add_portfolio_holding_body(h: HoldingAdd):
+    return _add_holding_logic(h.user_id, h)
 
+@app.post("/portfolio/{user_id}/add")
+@app.post("/api/portfolio/{user_id}/add")
+def add_portfolio_holding_path(user_id: int, h: HoldingAdd):
+    return _add_holding_logic(user_id, h)
+
+@app.delete("/portfolio/{user_id}/{symbol}")
 @app.delete("/api/portfolio/{user_id}/{symbol}")
 def delete_portfolio_holding(user_id: int, symbol: str):
-    holdings = db.load_portfolio_db(user_id)
-    updated = [x for x in holdings if x.get("symbol") != symbol.upper()]
-    db.save_portfolio_db(user_id, updated)
-    return {"status": "deleted", "symbol": symbol.upper(), "remaining": len(updated), "holdings": updated}
+    try:
+        holdings = db.load_portfolio_db(user_id)
+        updated = [x for x in holdings if x.get("symbol") != symbol.upper()]
+        db.save_portfolio_db(user_id, updated)
+        return {"status": "deleted", "symbol": symbol.upper(), "remaining": len(updated), "holdings": updated}
+    except Exception as e:
+        err_msg = f"Failed to remove holding: {str(e)}"
+        print(f"Error deleting holding: {err_msg}\n{traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=err_msg)
 
+@app.post("/portfolio/sync")
 @app.post("/api/portfolio/sync")
 def sync_portfolio_prices():
     try:
-        from portfolio_manager import update_portfolio_prices
-    except ImportError:
-        from api.portfolio_manager import update_portfolio_prices
-    users = db.get_all_users()
-    synced_users = []
-    for u in users:
-        uid = u["id"]
-        holdings = db.load_portfolio_db(uid)
-        if holdings:
-            updated = update_portfolio_prices(holdings)
-            db.save_portfolio_db(uid, updated)
-            synced_users.append(u["name"])
-    return {"status": "synced", "users_synced": synced_users}
+        try:
+            from portfolio_manager import update_portfolio_prices
+        except ImportError:
+            from api.portfolio_manager import update_portfolio_prices
+        users = db.get_all_users()
+        synced_users = []
+        for u in users:
+            uid = u["id"]
+            holdings = db.load_portfolio_db(uid)
+            if holdings:
+                updated = update_portfolio_prices(holdings)
+                db.save_portfolio_db(uid, updated)
+                synced_users.append(u["name"])
+        return {"status": "synced", "users_synced": synced_users}
+    except Exception as e:
+        err_msg = f"Sync failed: {str(e)}"
+        print(f"Error syncing portfolio: {err_msg}\n{traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=err_msg)
 
 @app.get("/api/scan/cache/{ticker}")
 def get_stock_cache(ticker: str):

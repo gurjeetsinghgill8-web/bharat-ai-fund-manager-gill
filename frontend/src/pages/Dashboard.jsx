@@ -99,20 +99,26 @@ export default function Dashboard({ userId = 1 }) {
     e.preventDefault();
     if (!form.symbol || !form.buy_price || !form.quantity) return;
     setAdding(true);
+    setError('');
     try {
       const r = await addHolding(userId, form.symbol, parseFloat(form.buy_price), parseInt(form.quantity));
       setHoldings(r.data.holdings || []);
       setForm({ symbol: '', buy_price: '', quantity: '' });
-    } catch { setError('Failed to add holding'); }
+    } catch (err) {
+      setError(err?.response?.data?.detail || 'Failed to add holding');
+    }
     setAdding(false);
   }
 
   async function handleRemove(symbol) {
     if (!confirm(`Remove ${symbol}?`)) return;
+    setError('');
     try {
       const r = await removeHolding(userId, symbol);
       setHoldings(r.data.holdings || []);
-    } catch { setError('Failed to remove holding'); }
+    } catch (err) {
+      setError(err?.response?.data?.detail || 'Failed to remove holding');
+    }
   }
 
   async function handleSync() {

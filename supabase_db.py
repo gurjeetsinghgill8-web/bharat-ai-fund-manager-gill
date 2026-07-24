@@ -64,54 +64,76 @@ def _headers(prefer: str = "") -> dict:
 
 
 def _client() -> "httpx.Client":
-    """Returns a configured httpx client."""
-    return httpx.Client(timeout=5.0)
+    """Returns a configured httpx client with 30s timeout."""
+    return httpx.Client(timeout=httpx.Timeout(30.0, connect=15.0))
+
+
+def _execute_with_retry(func, retries=3):
+    """Executes a request function with up to N retries on timeout/network errors."""
+    for attempt in range(retries):
+        try:
+            return func()
+        except (httpx.TimeoutException, httpx.NetworkError) as e:
+            if attempt == retries - 1:
+                raise
+            import time
+            time.sleep(0.5 * (attempt + 1))
 
 
 def _get(table: str, params: dict = None) -> list[dict]:
     """SELECT from a table."""
     _require_config()
-    with _client() as c:
-        r = c.get(f"{REST_BASE}/{table}", headers=_headers(), params=params or {})
-        r.raise_for_status()
-        return r.json()
+    def op():
+        with _client() as c:
+            r = c.get(f"{REST_BASE}/{table}", headers=_headers(), params=params or {})
+            r.raise_for_status()
+            return r.json()
+    return _execute_with_retry(op)
 
 
 def _post(table: str, data, prefer: str = "return=representation") -> list[dict]:
     """INSERT into a table."""
     _require_config()
-    with _client() as c:
-        r = c.post(
-            f"{REST_BASE}/{table}",
-            headers=_headers(prefer),
-            content=json.dumps(data),
-        )
-        r.raise_for_status()
-        return r.json() if r.text else []
+    def op():
+        with _client() as c:
+            r = c.post(
+                f"{REST_BASE}/{table}",
+                headers=_headers(prefer),
+                content=json.dumps(data),
+            )
+            if r.status_code >= 400:
+                print(f"[Supabase REST Error {r.status_code}] Table: {table} | Body: {r.text}")
+            r.raise_for_status()
+            return r.json() if r.text else []
+    return _execute_with_retry(op)
 
 
 def _patch(table: str, filters: dict, data: dict) -> list[dict]:
     """UPDATE rows matching filters."""
     _require_config()
     params = {k: f"eq.{v}" for k, v in filters.items()}
-    with _client() as c:
-        r = c.patch(
-            f"{REST_BASE}/{table}",
-            headers=_headers("return=representation"),
-            params=params,
-            content=json.dumps(data),
-        )
-        r.raise_for_status()
-        return r.json() if r.text else []
+    def op():
+        with _client() as c:
+            r = c.patch(
+                f"{REST_BASE}/{table}",
+                headers=_headers("return=representation"),
+                params=params,
+                content=json.dumps(data),
+            )
+            r.raise_for_status()
+            return r.json() if r.text else []
+    return _execute_with_retry(op)
 
 
 def _delete(table: str, filters: dict):
     """DELETE rows matching filters."""
     _require_config()
     params = {k: f"eq.{v}" for k, v in filters.items()}
-    with _client() as c:
-        r = c.delete(f"{REST_BASE}/{table}", headers=_headers(), params=params)
-        r.raise_for_status()
+    def op():
+        with _client() as c:
+            r = c.delete(f"{REST_BASE}/{table}", headers=_headers(), params=params)
+            r.raise_for_status()
+    return _execute_with_retry(op)
 
 
 def _upsert(table: str, data, on_conflict: str = "") -> list[dict]:
@@ -121,17 +143,19 @@ def _upsert(table: str, data, on_conflict: str = "") -> list[dict]:
     params = {}
     if on_conflict:
         params["on_conflict"] = on_conflict
-    with _client() as c:
-        r = c.post(
-            f"{REST_BASE}/{table}",
-            headers=_headers(prefer),
-            params=params,
-            content=json.dumps(data),
-        )
-        if r.status_code >= 400:
-            print(f"[Supabase REST Error {r.status_code}] Table: {table} | Body: {r.text}")
-        r.raise_for_status()
-        return r.json() if r.text else []
+    def op():
+        with _client() as c:
+            r = c.post(
+                f"{REST_BASE}/{table}",
+                headers=_headers(prefer),
+                params=params,
+                content=json.dumps(data),
+            )
+            if r.status_code >= 400:
+                print(f"[Supabase REST Error {r.status_code}] Table: {table} | Body: {r.text}")
+            r.raise_for_status()
+            return r.json() if r.text else []
+    return _execute_with_retry(op)
 
 
 def _require_config():
@@ -194,6 +218,17 @@ def delete_user(user_id: int):
     _delete("users", {"id": user_id})
 
 
+def ensure_user(user_id: int = 1) -> int:
+    """Ensures user exists in users table to satisfy foreign key constraints."""
+    try:
+        users = get_all_users()
+        if not users or not any(u["id"] == user_id for u in users):
+            return create_user("Gurjas")
+    except Exception as e:
+        print(f"[Supabase] ensure_user warning: {e}")
+    return user_id
+
+
 # ---------------------------------------------------------------------------
 # PORTFOLIO CRUD
 # ---------------------------------------------------------------------------
@@ -223,6 +258,7 @@ def load_portfolio_db(user_id: int) -> list[dict]:
 
 
 def save_portfolio_db(user_id: int, holdings: list[dict]):
+    ensure_user(user_id)
     _delete("portfolios", {"user_id": user_id})
     if not holdings:
         return
@@ -230,7 +266,7 @@ def save_portfolio_db(user_id: int, holdings: list[dict]):
     seen_symbols = set()
     rows = []
     for h in holdings:
-        sym = h["symbol"]
+        sym = str(h["symbol"]).upper()
         if sym in seen_symbols:
             continue
         seen_symbols.add(sym)
@@ -238,16 +274,16 @@ def save_portfolio_db(user_id: int, holdings: list[dict]):
         if alert_date == "":
             alert_date = None
         rows.append({
-            "user_id":            user_id,
+            "user_id":            int(user_id),
             "symbol":             sym,
-            "buy_price":          h["buy_price"],
-            "quantity":           h["quantity"],
-            "ltp":                h.get("ltp", 0.0),
-            "sma_200":            h.get("sma_200", 0.0),
-            "dist_pct":           h.get("dist_pct", 0.0),
+            "buy_price":          float(h.get("buy_price", 0.0)),
+            "quantity":           int(h.get("quantity", 0)),
+            "ltp":                float(h.get("ltp", 0.0)),
+            "sma_200":            float(h.get("sma_200", 0.0)),
+            "dist_pct":           float(h.get("dist_pct", 0.0)),
             "above_sma":          bool(h.get("above_sma", False)),
-            "signal":             h.get("signal", "WAIT"),
-            "signal_strength":    h.get("signal_strength", 0),
+            "signal":             str(h.get("signal", "WAIT")),
+            "signal_strength":    int(h.get("signal_strength", 0)),
             "last_updated":       h.get("last_updated"),
             "alert_emailed_date": alert_date,
         })

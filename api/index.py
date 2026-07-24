@@ -302,7 +302,7 @@ def sync_portfolio_prices():
             uid = u["id"]
             holdings = db.load_portfolio_db(uid)
             if holdings:
-                updated = update_portfolio_prices(holdings)
+                updated = update_portfolio_prices(holdings, user_id=uid)
                 db.save_portfolio_db(uid, updated)
                 synced_users.append(u["name"])
         return {"status": "synced", "users_synced": synced_users}

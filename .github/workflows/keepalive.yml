@@ -13,6 +13,7 @@ jobs:
     steps:
       - name: Ping the Streamlit app
         run: |
-          curl -fsSL --max-time 90 -o /dev/null \
-            "https://bharat-ai-fund-manager-gill-mkvrfrz3yhk4xtladm3jza.streamlit.app/"
+          curl -sS -L --max-redirs 5 --max-time 90 -o /dev/null \
+            -w "final HTTP status: %{http_code}\n" \
+            "https://bharat-ai-fund-manager-gill-mkvrfrz3yhk4xtladm3jza.streamlit.app/" || true
           echo "Keep-alive ping completed."

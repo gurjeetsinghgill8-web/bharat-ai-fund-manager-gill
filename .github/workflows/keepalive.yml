@@ -1,0 +1,18 @@
+name: Keep Bharat AI App Awake
+
+on:
+  schedule:
+    # Every 15 minutes (UTC). Streamlit Cloud hibernates apps after 12 hours
+    # without traffic, so this ping keeps the app permanently warm for free.
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping the Streamlit app
+        run: |
+          curl -fsSL --max-time 90 -o /dev/null \
+            "https://bharat-ai-fund-manager-gill-mkvrfrz3yhk4xtladm3jza.streamlit.app/"
+          echo "Keep-alive ping completed."

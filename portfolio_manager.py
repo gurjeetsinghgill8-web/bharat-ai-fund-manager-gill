@@ -16,22 +16,27 @@ import os
 import json
 import datetime
 
+# ---------------------------------------------------------------------------
+# Database selector: Supabase (if configured) or SQLite db.py fallback
+# ---------------------------------------------------------------------------
+USE_SUPABASE = False
 try:
-    from supabase_db import (
+    import supabase_db
+    if getattr(supabase_db, "is_configured", lambda: getattr(supabase_db, "_CONFIGURED", False))():
+        from supabase_db import (
+            load_portfolio_db, save_portfolio_db, add_holding_db, remove_holding_db,
+            get_all_user_ids_with_portfolios, get_all_users
+        )
+        USE_SUPABASE = True
+except Exception:
+    USE_SUPABASE = False
+
+if not USE_SUPABASE:
+    from db import (
         load_portfolio_db, save_portfolio_db, add_holding_db, remove_holding_db,
         get_all_user_ids_with_portfolios, get_all_users
     )
-except ImportError:
-    try:
-        from api.supabase_db import (
-            load_portfolio_db, save_portfolio_db, add_holding_db, remove_holding_db,
-            get_all_user_ids_with_portfolios, get_all_users
-        )
-    except ImportError:
-        from db import (
-            load_portfolio_db, save_portfolio_db, add_holding_db, remove_holding_db,
-            get_all_user_ids_with_portfolios, get_all_users
-        )
+
 
 # Legacy file path — kept for migration only
 PORTFOLIO_FILE = "portfolio.json"

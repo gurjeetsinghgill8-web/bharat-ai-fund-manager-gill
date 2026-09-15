@@ -215,6 +215,28 @@ def delete_user(user_id):
 # PORTFOLIO CRUD (Multi-User)
 # ---------------------------------------------------------------------------
 
+def ensure_user(user_id=1, default_name="Gurjas"):
+    """Ensures user exists in SQLite users table to satisfy foreign key constraints."""
+    conn = get_connection()
+    try:
+        row = conn.execute("SELECT id FROM users WHERE id = ?", (user_id,)).fetchone()
+        if not row:
+            # Check if default user exists with another id
+            row_name = conn.execute("SELECT id FROM users WHERE name = ?", (default_name,)).fetchone()
+            if row_name:
+                return row_name["id"]
+            # Create user with explicit id or next available
+            conn.execute("INSERT OR IGNORE INTO users (id, name) VALUES (?, ?)", (user_id, default_name))
+            conn.commit()
+            return user_id
+        return row["id"]
+    except Exception as e:
+        print(f"ensure_user warning: {e}")
+        return user_id
+    finally:
+        conn.close()
+
+
 def load_portfolio_db(user_id):
     """
     Loads all holdings for a specific user from SQLite.
@@ -252,12 +274,14 @@ def save_portfolio_db(user_id, holdings):
     Saves the entire portfolio for a user to SQLite.
     Deduplicates holdings by symbol to prevent UNIQUE constraint violations.
     """
+    user_id = ensure_user(user_id)
     conn = get_connection()
     try:
         # Clear existing holdings for this user and re-insert
         conn.execute("DELETE FROM portfolios WHERE user_id = ?", (user_id,))
         
         seen_symbols = set()
+
         for h in holdings:
             sym = h["symbol"]
             if sym in seen_symbols:
@@ -295,6 +319,7 @@ def add_holding_db(user_id, symbol, buy_price, quantity):
     If symbol already exists for this user, updates price and quantity.
     Returns the updated holdings list.
     """
+    user_id = ensure_user(user_id)
     conn = get_connection()
     try:
         existing = conn.execute(
@@ -427,6 +452,27 @@ def clear_scan_cache():
         conn.commit()
     finally:
         conn.close()
+
+
+def save_scan_meta(meta):
+    """Saves or updates scan metadata."""
+    conn = get_connection()
+    try:
+        if isinstance(meta, dict):
+            now_str = meta.get("last_scan_time") or datetime.datetime.now().isoformat()
+            total = meta.get("total_stocks", 4777)
+            mode = meta.get("scan_mode", "Full Universe")
+        else:
+            now_str = datetime.datetime.now().isoformat()
+            total = 4777
+            mode = "Full Universe"
+        conn.execute("""
+            UPDATE scan_meta SET last_scan_time = ?, total_stocks = ?, scan_mode = ? WHERE id = 1
+        """, (now_str, total, mode))
+        conn.commit()
+    finally:
+        conn.close()
+
 
 
 # ---------------------------------------------------------------------------

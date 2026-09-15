@@ -7,10 +7,21 @@ import yfinance as yf
 import pandas as pd
 from dotenv import load_dotenv
 from screeners_scraper import fetch_screener_data
+# ---------------------------------------------------------------------------
+# Database selector: Supabase (if configured) or SQLite db.py fallback
+# ---------------------------------------------------------------------------
+USE_SUPABASE = False
 try:
-    from supabase_db import save_scan_cache, load_scan_cache, get_scan_meta
-except ImportError:
+    import supabase_db
+    if getattr(supabase_db, "is_configured", lambda: getattr(supabase_db, "_CONFIGURED", False))():
+        from supabase_db import save_scan_cache, load_scan_cache, get_scan_meta
+        USE_SUPABASE = True
+except Exception:
+    USE_SUPABASE = False
+
+if not USE_SUPABASE:
     from db import save_scan_cache, load_scan_cache, get_scan_meta
+
 
 load_dotenv()
 CACHE_EXPIRY_DAYS = int(os.getenv("CACHE_EXPIRY_DAYS", "7"))

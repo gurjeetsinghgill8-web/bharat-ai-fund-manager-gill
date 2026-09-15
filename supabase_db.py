@@ -37,17 +37,34 @@ except ImportError:
 # CONFIG
 # ---------------------------------------------------------------------------
 
-SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
+SUPABASE_URL = os.getenv("SUPABASE_URL", "")
 SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "")
 
-_CONFIGURED = (
+# Fallback to streamlit secrets if running on Streamlit Cloud
+if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
+    try:
+        import streamlit as st
+        if hasattr(st, "secrets"):
+            SUPABASE_URL = SUPABASE_URL or st.secrets.get("SUPABASE_URL", "")
+            SUPABASE_SERVICE_KEY = SUPABASE_SERVICE_KEY or st.secrets.get("SUPABASE_SERVICE_KEY", "")
+    except Exception:
+        pass
+
+SUPABASE_URL = (SUPABASE_URL or "").rstrip("/")
+SUPABASE_SERVICE_KEY = SUPABASE_SERVICE_KEY or ""
+
+_CONFIGURED = bool(
     SUPABASE_URL
     and SUPABASE_SERVICE_KEY
     and "YOUR_PROJECT_ID" not in SUPABASE_URL
     and "YOUR_SERVICE_ROLE_KEY" not in SUPABASE_SERVICE_KEY
 )
 
+def is_configured() -> bool:
+    return bool(_CONFIGURED and _HTTPX_OK)
+
 REST_BASE = f"{SUPABASE_URL}/rest/v1" if SUPABASE_URL else ""
+
 
 
 def _headers(prefer: str = "") -> dict:
@@ -168,9 +185,9 @@ def _upsert(table: str, data, on_conflict: str = "") -> list[dict]:
 
 
 def _require_config():
-    if not _CONFIGURED:
+    if not is_configured():
         raise RuntimeError(
-            "Supabase not configured. Set SUPABASE_URL and SUPABASE_SERVICE_KEY in .env"
+            "Supabase not configured. Set SUPABASE_URL and SUPABASE_SERVICE_KEY in .env or secrets"
         )
     if not _HTTPX_OK:
         raise RuntimeError("httpx not installed. Run: pip install httpx")
@@ -185,8 +202,7 @@ def init_db():
     Compatibility shim — tables created via supabase_schema.sql.
     Verifies connection if configured, silently skips if not.
     """
-    if not _CONFIGURED:
-        print("[Supabase] Not configured yet — skipping init (fill in .env first)")
+    if not is_configured():
         return
     try:
         _get("scan_meta", {"select": "id", "limit": "1"})
@@ -200,6 +216,9 @@ def init_db():
 # ---------------------------------------------------------------------------
 
 def create_user(name: str, email: str = None) -> int:
+    if not is_configured():
+        import db
+        return db.create_user(name, email)
     existing = _get("users", {"select": "id,email", "name": f"eq.{name}", "limit": "1"})
     if existing:
         uid = existing[0]["id"]
@@ -211,24 +230,41 @@ def create_user(name: str, email: str = None) -> int:
 
 
 def update_user_email(user_id: int, email: str):
+    if not is_configured():
+        import db
+        if hasattr(db, "update_user_email"):
+            return db.update_user_email(user_id, email)
+        return
     _patch("users", {"id": user_id}, {"email": email})
 
 
 def get_all_users() -> list[dict]:
+    if not is_configured():
+        import db
+        return db.get_all_users()
     return _get("users", {"select": "id,name,email,created_at", "order": "id"})
 
 
 def get_user_by_name(name: str) -> Optional[dict]:
+    if not is_configured():
+        import db
+        return db.get_user_by_name(name)
     rows = _get("users", {"select": "id,name,email,created_at", "name": f"eq.{name}", "limit": "1"})
     return rows[0] if rows else None
 
 
 def delete_user(user_id: int):
+    if not is_configured():
+        import db
+        return db.delete_user(user_id)
     _delete("users", {"id": user_id})
 
 
 def ensure_user(user_id: int = 1) -> int:
     """Ensures user exists in users table to satisfy foreign key constraints."""
+    if not is_configured():
+        import db
+        return db.ensure_user(user_id) if hasattr(db, "ensure_user") else user_id
     try:
         users = get_all_users()
         if not users or not any(u["id"] == user_id for u in users):
@@ -243,6 +279,9 @@ def ensure_user(user_id: int = 1) -> int:
 # ---------------------------------------------------------------------------
 
 def load_portfolio_db(user_id: int) -> list[dict]:
+    if not is_configured():
+        import db
+        return db.load_portfolio_db(user_id)
     rows = _get("portfolios", {
         "select": "*",
         "user_id": f"eq.{user_id}",
@@ -267,6 +306,9 @@ def load_portfolio_db(user_id: int) -> list[dict]:
 
 
 def save_portfolio_db(user_id: int, holdings: list[dict]):
+    if not is_configured():
+        import db
+        return db.save_portfolio_db(user_id, holdings)
     ensure_user(user_id)
     _delete("portfolios", {"user_id": user_id})
     if not holdings:
@@ -303,6 +345,9 @@ def save_portfolio_db(user_id: int, holdings: list[dict]):
 
 
 def add_holding_db(user_id: int, symbol: str, buy_price: float, quantity: int) -> list[dict]:
+    if not is_configured():
+        import db
+        return db.add_holding_db(user_id, symbol, buy_price, quantity)
     _upsert("portfolios", {
         "user_id":   user_id,
         "symbol":    symbol,
@@ -313,6 +358,9 @@ def add_holding_db(user_id: int, symbol: str, buy_price: float, quantity: int) -
 
 
 def remove_holding_db(user_id: int, symbol: str) -> list[dict]:
+    if not is_configured():
+        import db
+        return db.remove_holding_db(user_id, symbol)
     _require_config()
     with _client() as c:
         r = c.delete(
@@ -325,6 +373,9 @@ def remove_holding_db(user_id: int, symbol: str) -> list[dict]:
 
 
 def get_all_user_ids_with_portfolios() -> list[int]:
+    if not is_configured():
+        import db
+        return db.get_all_user_ids_with_portfolios()
     rows = _get("portfolios", {"select": "user_id"})
     return list(set(r["user_id"] for r in rows))
 
@@ -334,6 +385,9 @@ def get_all_user_ids_with_portfolios() -> list[int]:
 # ---------------------------------------------------------------------------
 
 def save_scan_cache(stock_data_dict: dict):
+    if not is_configured():
+        import db
+        return db.save_scan_cache(stock_data_dict)
     now_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
     rows = [
         {"ticker": ticker, "data": _make_serializable(data), "updated_at": now_str}
@@ -355,6 +409,9 @@ def save_scan_cache(stock_data_dict: dict):
 
 
 def load_scan_cache() -> dict:
+    if not is_configured():
+        import db
+        return db.load_scan_cache()
     result = {}
     offset = 0
     limit = 1000
@@ -375,6 +432,9 @@ def load_scan_cache() -> dict:
 
 
 def get_scan_meta() -> dict:
+    if not is_configured():
+        import db
+        return db.get_scan_meta()
     rows = _get("scan_meta", {"select": "*", "id": "eq.1", "limit": "1"})
     if rows:
         return rows[0]
@@ -382,6 +442,11 @@ def get_scan_meta() -> dict:
 
 
 def save_scan_meta(meta: dict):
+    if not is_configured():
+        import db
+        if hasattr(db, "save_scan_meta"):
+            return db.save_scan_meta(meta)
+        return
     _require_config()
     payload = {
         "id": 1,
@@ -393,6 +458,11 @@ def save_scan_meta(meta: dict):
 
 
 def clear_scan_cache():
+    if not is_configured():
+        import db
+        if hasattr(db, "clear_scan_cache"):
+            return db.clear_scan_cache()
+        return
     _require_config()
     def op():
         c = _get_client()
@@ -410,6 +480,11 @@ def clear_scan_cache():
 # ---------------------------------------------------------------------------
 
 def save_gurjas_results(screener: str, results: list[dict]):
+    if not is_configured():
+        import db
+        if hasattr(db, "save_gurjas_results"):
+            return db.save_gurjas_results(screener, results)
+        return
     clean_screener = screener.replace(" ", "").upper()
     _delete("gurjas_results", {"screener": clean_screener})
     if not results:
@@ -432,6 +507,11 @@ def save_gurjas_results(screener: str, results: list[dict]):
 
 
 def load_gurjas_results(screener: str) -> list[dict]:
+    if not is_configured():
+        import db
+        if hasattr(db, "load_gurjas_results"):
+            return db.load_gurjas_results(screener)
+        return []
     clean_screener = screener.replace(" ", "").upper()
     rows = _get("gurjas_results", {
         "select": "symbol,data,scanned_at",
@@ -447,6 +527,9 @@ def load_gurjas_results(screener: str) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 def migrate_from_json(json_path: str = "portfolio_store.json", default_user_name: str = "Gurjas") -> bool:
+    if not is_configured():
+        import db
+        return db.migrate_from_json(json_path, default_user_name)
     if not os.path.exists(json_path):
         return False
     try:

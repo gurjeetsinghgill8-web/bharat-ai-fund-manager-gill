@@ -169,6 +169,77 @@ def fetch_stock_data(ticker, force_refresh=False):
         inst_share = held_by_institutions * 100.0 if held_by_institutions <= 1.0 else held_by_institutions
         public_share = max(0.0, 100.0 - promoter_share - inst_share)
 
+        # 3b. Profitability ratios — real ROE / ROCE / operating cash flow.
+        # These feed the Peter Lynch 100-point page (Quality bucket). They are best-effort:
+        # when Yahoo does not expose a value we store 0.0 and the frontend falls back to a
+        # clearly-labelled estimate instead of trusting a made-up number.
+        def _pct_or_zero(value):
+            """Yahoo returns ratios as a fraction (0.185) but sometimes already as a percent."""
+            try:
+                v = float(value)
+            except (TypeError, ValueError):
+                return 0.0
+            if v != v or v == 0.0:            # NaN or missing
+                return 0.0
+            return v * 100.0 if abs(v) <= 5.0 else v
+
+        roe_pct = _pct_or_zero(info.get('returnOnEquity') or info.get('returnOnAssets'))
+
+        # ROCE = EBIT / (Total Assets − Current Liabilities), ROE = Net Income / Shareholders' Equity.
+        # Both are computed from the annual statements, so they do not depend on Yahoo's `info`
+        # (which omits returnOnEquity for most Indian tickers). Skipped for lenders, where
+        # "capital employed" is not comparable, and skipped when the statements are unavailable.
+        roce_pct = 0.0
+        try:
+            if str(info.get('sector') or '').lower() not in ("financial services", "financial"):
+                # EXACT label matching: "Normalized EBITDA" also contains "EBIT" but is not EBIT.
+                def _latest_exact(frame, labels):
+                    if frame is None or frame.empty:
+                        return 0.0
+                    for label in labels:
+                        if label in frame.index:
+                            series = frame.loc[label].dropna()
+                            if not series.empty:
+                                return float(series.iloc[0])
+                    return 0.0
+
+                annual = t.financials
+                ebit_val = _latest_exact(annual, ['EBIT', 'Operating Income'])
+                net_income_val = _latest_exact(annual, ['Net Income Common Stockholders', 'Net Income'])
+
+                total_assets = _latest_exact(balance_sheet, ['Total Assets'])
+                current_liab = _latest_exact(balance_sheet, ['Current Liabilities'])
+                equity_val = _latest_exact(balance_sheet, ['Stockholders Equity', 'Common Stock Equity'])
+
+                capital_employed = total_assets - current_liab
+                if ebit_val and capital_employed > 0:
+                    roce_pct = (ebit_val / capital_employed) * 100.0
+                if roe_pct == 0.0 and net_income_val and equity_val > 0:
+                    roe_pct = (net_income_val / equity_val) * 100.0
+        except Exception:
+            roce_pct = 0.0
+
+        # Operating cash flow + the matching net income, for the CFO/PAT quality test.
+        operating_cash_flow = 0.0
+        cashflow_net_income = 0.0
+        try:
+            cashflow = t.cashflow
+            if cashflow is not None and not cashflow.empty:
+                ocf_keys = [k for k in cashflow.index
+                            if 'Operating Cash Flow' in str(k) or 'Total Cash From Operating Activities' in str(k)]
+                if ocf_keys:
+                    ocf_series = cashflow.loc[ocf_keys[0]].dropna()
+                    if not ocf_series.empty:
+                        operating_cash_flow = float(ocf_series.iloc[0])
+                ni_keys = [k for k in cashflow.index if 'Net Income' in str(k)]
+                if ni_keys:
+                    ni_series = cashflow.loc[ni_keys[0]].dropna()
+                    if not ni_series.empty:
+                        cashflow_net_income = float(ni_series.iloc[0])
+        except Exception:
+            operating_cash_flow = 0.0
+            cashflow_net_income = 0.0
+
         # Market Cap & PEG Ratio
         market_cap = float(info.get('marketCap') or 0.0)
         market_cap_cr = round(market_cap / 10_000_000.0, 2)
@@ -196,6 +267,10 @@ def fetch_stock_data(ticker, force_refresh=False):
             "debt_to_equity": debt_to_equity,
             "debt": debt,
             "reserves": reserves,
+            "roe_pct": roe_pct,
+            "roce_pct": roce_pct,
+            "operating_cash_flow": operating_cash_flow,
+            "cashflow_net_income": cashflow_net_income,
             "promoter_share": promoter_share,
             "inst_share": inst_share,
             "public_share": public_share,
@@ -206,7 +281,7 @@ def fetch_stock_data(ticker, force_refresh=False):
             "industry": industry,
             "exchange": exchange,
             "timestamp": datetime.datetime.now(),
-            "_cache_version": 4  # v4 = added market_cap_cr, peg_ratio
+            "_cache_version": 5  # v5 = added roe_pct, roce_pct, operating_cash_flow (Peter Lynch scoring)
         }
         return data
     except Exception as e:

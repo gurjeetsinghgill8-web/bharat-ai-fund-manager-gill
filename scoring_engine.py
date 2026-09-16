@@ -39,6 +39,21 @@ def _cagr_stars_display(cagr_value):
     return stars, val_str
 
 
+def _num_or_none(value):
+    """Float or None — used for ratios the Peter Lynch page must never invent.
+
+    0.0 means "not available" in the scan cache, so it becomes None (JSON null) and the
+    frontend shows "n/a" / uses a labelled estimate instead of scoring a fake zero.
+    """
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        return None
+    if f != f or f == 0.0:      # NaN or "no data"
+        return None
+    return round(f, 2)
+
+
 def _make_star_bar(star_count, max_stars=4):
     """Create visual star string like ⭐⭐⭐ (3 stars)."""
     return "⭐" * star_count + "☆" * (max_stars - star_count)
@@ -220,7 +235,7 @@ def score_stock(stock_data):
     if debt_decimal > 2.0:
         is_red_alert = True
         red_reasons.append(f"High Debt/Equity Ratio ({round(debt_decimal, 2)})")
-    if stock_data.get("reserves", 0.0) < 0:
+    if (stock_data.get("reserves") or 0.0) < 0:
         is_red_alert = True
         red_reasons.append("Negative Reserves")
 
@@ -278,7 +293,9 @@ def score_stock(stock_data):
     cagr_accelerating = sales_growth_accelerating and profit_growth_accelerating
 
     # --- 200 SMA Fields (from stock_data cache) ---
-    sma_200 = stock_data.get("sma_200", 0.0)
+    # Note: values coming back from Supabase JSONB can be None (NaN was cleaned on save),
+    # so every numeric read here must tolerate None.
+    sma_200 = stock_data.get("sma_200") or 0.0
     is_above_200_sma = True
     dist_pct = 0.0
     if sma_200 > 0:
@@ -378,10 +395,17 @@ def score_stock(stock_data):
         "Red Reasons": ", ".join(red_reasons) if red_reasons else "None",
         "Momentum Status": momentum_status,
         "Debt/Equity": round(debt_eq, 2),
+        "ROE %": _num_or_none(stock_data.get("roe_pct")),
+        "ROCE %": _num_or_none(stock_data.get("roce_pct")),
+        "CFO/PAT": _num_or_none(
+            (stock_data.get("operating_cash_flow") or 0.0) / stock_data.get("cashflow_net_income")
+            if stock_data.get("cashflow_net_income") else None
+        ),
+        "CFO (Cr)": _num_or_none((stock_data.get("operating_cash_flow") or 0.0) / 10000000.0),
         "Reserves": round(stock_data.get("reserves", 0.0) / 10000000.0, 2) if stock_data.get("reserves") else 0.0,
-        "Promoter %": round(stock_data.get("promoter_share", 0.0), 1),
-        "Institution %": round(stock_data.get("inst_share", 0.0), 1),
-        "Public %": round(stock_data.get("public_share", 0.0), 1),
+        "Promoter %": round(stock_data.get("promoter_share") or 0.0, 1),
+        "Institution %": round(stock_data.get("inst_share") or 0.0, 1),
+        "Public %": round(stock_data.get("public_share") or 0.0, 1),
         "Sales CAGR": round(sales_cagr_all, 2) if sales_cagr_all is not None else 0.0,
         "Sales CAGR 3Y": round(sales_cagr_3y, 2) if sales_cagr_3y is not None else 0.0,
         "Sales CAGR 5Y": round(sales_cagr_5y, 2) if sales_cagr_5y is not None else 0.0,

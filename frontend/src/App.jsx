@@ -6,14 +6,16 @@ import Gurjas1 from './pages/Gurjas1';
 import Gurjas2 from './pages/Gurjas2';
 import Momentum from './pages/Momentum';
 import Sectors from './pages/Sectors';
+import PeterLynch from './pages/PeterLynch';
 import './index.css';
 
 const NAV = [
-  { path: '/',         icon: '📊', label: 'Portfolio Dashboard' },
-  { path: '/gurjas1',  icon: '🔍', label: 'GURJAS 1 Screener' },
-  { path: '/gurjas2',  icon: '🎯', label: 'GURJAS 2 Screener' },
-  { path: '/momentum', icon: '⚡', label: 'Momentum & Breakout' },
-  { path: '/sectors',  icon: '🏭', label: 'Sectors & Industries' },
+  { path: '/',            icon: '📊', label: 'Portfolio Dashboard' },
+  { path: '/gurjas1',     icon: '🔍', label: 'GURJAS 1 Screener' },
+  { path: '/gurjas2',     icon: '🎯', label: 'GURJAS 2 Screener' },
+  { path: '/peter-lynch', icon: '🏆', label: 'Peter Lynch 100-Point' },
+  { path: '/momentum',    icon: '⚡', label: 'Momentum & Breakout' },
+  { path: '/sectors',     icon: '🏭', label: 'Sectors & Industries' },
 ];
 
 export default function App() {
@@ -60,6 +62,7 @@ export default function App() {
           <Route path="/"         element={<Dashboard userId={user.id} />} />
           <Route path="/gurjas1"  element={<Gurjas1 />} />
           <Route path="/gurjas2"  element={<Gurjas2 />} />
+          <Route path="/peter-lynch" element={<PeterLynch />} />
           <Route path="/momentum" element={<Momentum />} />
           <Route path="/sectors"  element={<Sectors />} />
         </Routes>

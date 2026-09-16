@@ -13,6 +13,19 @@ from data_fetcher import (
     save_scan_results_to_db, load_cached_scan_from_db
 )
 from scoring_engine import run_scoring, score_stock, run_scoring_v2, score_stock_v2, run_scoring_v3, score_stock_v3
+from lynch_engine import (
+    SCREEN_DEFS as LYNCH_SCREENS,
+    GRADE_BANDS as LYNCH_GRADES,
+    GROWTH_TESTS as LYNCH_GROWTH_TESTS,
+    PEG_BANDS as LYNCH_PEG_BANDS,
+    STORY_ITEMS as LYNCH_STORY_ITEMS,
+    STEP_QUESTIONS as LYNCH_QUESTIONS,
+    rank_rows as lynch_rank_rows,
+    rows_to_records as lynch_rows_to_records,
+    rows_to_csv as lynch_rows_to_csv,
+    top_five_text as lynch_top_five_text,
+    apply_screen as lynch_apply_screen,
+)
 from sector_industry import (
     compute_nse_sectors, compute_bse_sectors, compute_all_sectors,
     compute_nse_industries, compute_bse_industries, compute_all_industries,
@@ -350,6 +363,7 @@ engine_page = st.sidebar.selectbox(
         "📊 Page 1: Portfolio Dashboard",
         "🔍 Page 2: GURJAS 1 Screener (Growth & DMA & PEG < 1.2)",
         "🎯 Page 3: GURJAS 2 Screener (MidCap & PEG < 1.5)",
+        "🏆 Page 6: Peter Lynch 100-Point System",
         "⚡ Page 4: Momentum & Breakout",
         "🏭 Page 5: Sectors & Industries"
     ],
@@ -933,6 +947,9 @@ if st.session_state["stock_cache"]:
     elif engine_page == "🎯 Page 3: GURJAS 2 Screener (MidCap & PEG < 1.5)":
         df, continuous, red_alerts = run_scoring_v3(st.session_state["stock_cache"])
         latest_highs = pd.DataFrame()
+    elif engine_page == "🏆 Page 6: Peter Lynch 100-Point System":
+        # Layer 1 filters and the 100-point ranking run inside lynch_engine on the full scored universe.
+        df, latest_highs, continuous, red_alerts = run_scoring(st.session_state["stock_cache"])
     elif engine_page == "⚡ Page 4: Momentum & Breakout":
         df, latest_highs, continuous, red_alerts = run_scoring(st.session_state["stock_cache"])
     elif engine_page == "🏭 Page 5: Sectors & Industries":
@@ -1991,6 +2008,283 @@ else:
                             st.info("Tip: Double-check that your SMTP user and app passwords are set correctly in your `.env` file.")
                     else:
                         st.error("Report generation failed. Check server logs.")
+
+    elif engine_page == "🏆 Page 6: Peter Lynch 100-Point System":
+        # ══════════════════════════════════════════════════════════════════
+        # DR GILL — PETER LYNCH 100-POINT SYSTEM
+        #   Layer 1 : machine filter  (Elite / Lynch Hybrid queries)
+        #   Layer 2 : 100-point ranking  Growth /40 · Valuation /20 · Quality /20 · Story /20
+        #   Layer 3 : human research — override the Story bucket by hand
+        # Engine: lynch_engine.py (same rules as the React page's frontend/src/lynch.js)
+        # ══════════════════════════════════════════════════════════════════
+        st.title("🏆 DR GILL — PETER LYNCH 100-POINT SYSTEM")
+        st.markdown("### Screener → 100-point score → Top 5 → deep research")
+        st.caption(
+            "**Growth /40 · Valuation /20 · Quality /20 · Lynch Story /20.** "
+            "Layer 1 filters the universe, Layer 2 ranks it, Layer 3 is your own reading of the annual report. "
+            "Every mark is labelled **exact** (from the scan), **estimate** (derived), **n/a** (not in scan — scores 0, never invented) or **manual** (your override)."
+        )
+
+        if df.empty:
+            st.warning("No stock data available. Run a 'System Scan' from the left control panel first.")
+        else:
+            # ── Session-state overrides for the Story bucket (Layer 3) ──
+            def _lynch_collect_overrides(auto_rows):
+                """Story marks typed by the user — only kept when they differ from the auto value."""
+                auto_map = {r["symbol"]: r["story"]["auto"] for r in auto_rows}
+                collected = {}
+                for key, val in list(st.session_state.items()):
+                    if not (isinstance(key, str) and key.startswith("lynch_story__")):
+                        continue
+                    try:
+                        _, sym, item = key.split("__", 2)
+                    except ValueError:
+                        continue
+                    auto_val = auto_map.get(sym, {}).get(item)
+                    try:
+                        if auto_val is not None and abs(float(val) - float(auto_val)) < 1e-9:
+                            continue          # untouched → not an override
+                    except (TypeError, ValueError):
+                        continue
+                    collected.setdefault(sym, {})[item] = float(val)
+                return collected
+
+            # ── Layer-1 selector + controls ──
+            ctrl1, ctrl2, ctrl3, ctrl4, ctrl5 = st.columns([2, 1, 1.4, 1.2, 1.4])
+            with ctrl1:
+                screen_label = st.radio(
+                    "Layer 1 — candidate pool",
+                    [f"{s['icon']} {s['name']}" for s in LYNCH_SCREENS.values()],
+                    index=1,
+                    horizontal=True,
+                    key="lynch_screen_radio",
+                )
+            screen_id = next(k for k, s in LYNCH_SCREENS.items() if f"{s['icon']} {s['name']}" == screen_label)
+            with ctrl2:
+                top_only = st.checkbox("Top 5 only", value=True, key="lynch_top5_only")
+            with ctrl3:
+                lynch_search = st.text_input("Search symbol / sector / industry", value="", key="lynch_search")
+            with ctrl4:
+                lynch_min = st.number_input("Min score", min_value=0, max_value=100, value=0, step=5, key="lynch_min_score")
+            with ctrl5:
+                lynch_sort = st.selectbox(
+                    "Sort by",
+                    ["Total score", "Quality /20", "Lowest PEG", "Market cap", "Symbol A–Z"],
+                    key="lynch_sort",
+                )
+
+            # ── The two Screener.in baskets (copy button is on the code block) ──
+            with st.expander("🔥 Layer 1 — the two Screener.in queries (copy & paste)", expanded=(screen_id != "all")):
+                q_elite, q_hybrid = st.columns(2)
+                with q_elite:
+                    st.markdown(f"**{LYNCH_SCREENS['elite']['icon']} {LYNCH_SCREENS['elite']['name']}** — {LYNCH_SCREENS['elite']['blurb']}")
+                    st.code(LYNCH_SCREENS["elite"]["query"], language="text")
+                with q_hybrid:
+                    st.markdown(f"**{LYNCH_SCREENS['hybrid']['icon']} {LYNCH_SCREENS['hybrid']['name']}** — {LYNCH_SCREENS['hybrid']['blurb']}")
+                    st.code(LYNCH_SCREENS["hybrid"]["query"], language="text")
+                st.caption(
+                    "Screener.in has no “TTM Result Date” field — for current growth use `Profit growth` and "
+                    "`YOY Quarterly profit growth`. Strict is for conviction, Hybrid is for ranking."
+                )
+
+            # ── LAYER 2: score the universe ──
+            lynch_records = df.to_dict("records")
+            lynch_auto_rows = lynch_rank_rows(lynch_records, {}, screen_id)
+            lynch_overrides = _lynch_collect_overrides(lynch_auto_rows)
+            lynch_rows = lynch_rank_rows(lynch_records, lynch_overrides, screen_id)
+
+            pool_size = len(lynch_records)
+            pass_count = len(lynch_rows)
+            unverified_all = sorted({u for r in lynch_rows for u in r["screen"]["unverified"]})
+
+            # metric cards
+            lcol1, lcol2, lcol3, lcol4, lcol5 = st.columns(5)
+            top_score = lynch_rows[0]["total"] if lynch_rows else 0
+            avg_score = round(sum(r["total"] for r in lynch_rows) / pass_count, 1) if pass_count else 0
+            aa_count = len([r for r in lynch_rows if r["grade"] in ("A+", "A")])
+            manual_count = len([r for r in lynch_rows if r["storyOverridden"]])
+            with lcol1:
+                st.markdown(f"""<div class="metric-container"><div class="metric-value">{pool_size}</div><div class="metric-label">Universe Scored</div></div>""", unsafe_allow_html=True)
+            with lcol2:
+                st.markdown(f"""<div class="metric-container"><div class="metric-value" style="color: #00FF66; text-shadow: 0px 0px 8px rgba(0, 255, 102, 0.5);">{pass_count}</div><div class="metric-label">Pass {LYNCH_SCREENS[screen_id]['name']}</div></div>""", unsafe_allow_html=True)
+            with lcol3:
+                st.markdown(f"""<div class="metric-container"><div class="metric-value" style="color: #FFD700; text-shadow: 0px 0px 8px rgba(255, 215, 0, 0.5);">{top_score}<span style="font-size: 18px;">/100</span></div><div class="metric-label">Top Score</div></div>""", unsafe_allow_html=True)
+            with lcol4:
+                st.markdown(f"""<div class="metric-container"><div class="metric-value" style="color: #008DDA;">{aa_count}</div><div class="metric-label">Graded A / A+</div></div>""", unsafe_allow_html=True)
+            with lcol5:
+                st.markdown(f"""<div class="metric-container"><div class="metric-value" style="color: #FFC900;">{avg_score}{f" ({manual_count} manual)" if manual_count else ""}</div><div class="metric-label">Average Score</div></div>""", unsafe_allow_html=True)
+
+            st.markdown("<br/>", unsafe_allow_html=True)
+
+            if pass_count == 0:
+                st.info(
+                    f"ℹ️ No stock passes **{LYNCH_SCREENS[screen_id]['name']}** in the current scan. "
+                    "Switch the Layer-1 radio to **📚 Everything scanned** to see the full ranking, "
+                    "or run a System Scan with the 🌐 Top 4000+ universe."
+                )
+
+            # ── filters ──
+            view_rows = lynch_rows
+            if lynch_search:
+                needle = lynch_search.strip().lower()
+                view_rows = [r for r in view_rows if needle in r["symbol"].lower()
+                             or needle in str(r["sector"]).lower() or needle in str(r["industry"]).lower()]
+            if lynch_min and lynch_min > 0:
+                view_rows = [r for r in view_rows if r["total"] >= lynch_min]
+            if lynch_sort == "Quality /20":
+                view_rows = sorted(view_rows, key=lambda r: (r["quality"]["points"], r["total"]), reverse=True)
+            elif lynch_sort == "Lowest PEG":
+                view_rows = sorted(view_rows, key=lambda r: (r["metrics"]["peg"] if r["metrics"]["peg"] else 999))
+            elif lynch_sort == "Market cap":
+                view_rows = sorted(view_rows, key=lambda r: (r["metrics"]["mcap"] or 0), reverse=True)
+            elif lynch_sort == "Symbol A–Z":
+                view_rows = sorted(view_rows, key=lambda r: r["symbol"])
+
+            table_rows = view_rows[:5] if top_only else view_rows
+
+            # ── Layer-2 ranking table ──
+            st.subheader(f"🏆 100-Point Ranking — {len(table_rows)} of {pass_count} shown")
+            if table_rows:
+                st.dataframe(pd.DataFrame(lynch_rows_to_records(table_rows)), use_container_width=True, hide_index=True,
+                             height=min(560, 38 * len(table_rows) + 42))
+                dl1, dl2, dl3 = st.columns([1, 1, 3])
+                with dl1:
+                    st.download_button("⬇ Download CSV", data=lynch_rows_to_csv(table_rows),
+                                       file_name=f"lynch-100-score-{datetime.date.today().isoformat()}.csv",
+                                       mime="text/csv", use_container_width=True)
+                with dl2:
+                    st.download_button("⬇ Top 5 as text", data=lynch_top_five_text(table_rows, 5),
+                                       file_name="lynch-top5.txt", mime="text/plain", use_container_width=True)
+                with dl3:
+                    st.caption("The Top-5 box below has a copy button — one tap puts the WhatsApp-ready list on your clipboard.")
+            else:
+                st.info("Nothing to rank with the current filters — clear the search / min-score filters.")
+
+            if table_rows:
+                # ── Top-5 spotlight (copy-ready) ──
+                with st.expander("📋 Copy-ready Top 5 (WhatsApp / notes)", expanded=False):
+                    st.code(lynch_top_five_text(table_rows, 5), language="text")
+
+                # ── Score card for any ranked stock ──
+                st.markdown("---")
+                st.subheader("🔬 Score card — every mark, and your Layer-3 overrides")
+                lynch_options = [f"{r['symbol']} — {r['total']}/100 ({r['grade']})" for r in view_rows]
+                picked = st.selectbox("Select a stock", lynch_options, key="lynch_scorecard_pick")
+                picked_sym = picked.split(" — ")[0]
+                row = next(r for r in view_rows if r["symbol"] == picked_sym)
+                m = row["metrics"]
+
+                if row["warnings"]:
+                    st.markdown(
+                        "<div style='background: rgba(255,159,67,0.12); border-left: 5px solid #FF9F43; padding: 10px 14px; border-radius: 6px; margin-bottom: 12px;'><b>⚠️ Watch-outs:</b> "
+                        + " · ".join(row["warnings"]) + "</div>", unsafe_allow_html=True)
+
+                fact_line = " &nbsp;|&nbsp; ".join([
+                    f"Sales 3Y <b>{m['sales3y'] if m['sales3y'] is not None else '—'}%</b>",
+                    f"Sales 5Y <b>{m['sales5y'] if m['sales5y'] is not None else '—'}%</b>",
+                    f"Profit 3Y <b>{m['profit3y'] if m['profit3y'] is not None else '—'}%</b>",
+                    f"Profit 5Y <b>{m['profit5y'] if m['profit5y'] is not None else '—'}%</b>",
+                    f"Latest sales <b>{m['salesGrowth'] if m['salesGrowth'] is not None else '—'}%</b>",
+                    f"Latest profit <b>{m['profitGrowth'] if m['profitGrowth'] is not None else '—'}%</b>",
+                    f"PEG <b>{m['peg'] if m['peg'] is not None else '—'}</b>",
+                    f"PE <b>{m['pe'] if m['pe'] is not None else '—'}</b>",
+                    f"MCap <b>₹{round(m['mcap']):,}Cr</b>" if m["mcap"] is not None else "MCap <b>—</b>",
+                    f"ROCE <b>{m['roce'] if m['roce'] is not None else '—'}%</b> <i>({m['source']['roce']})</i>",
+                    f"ROE <b>{m['roe'] if m['roe'] is not None else '—'}%</b> <i>({m['source']['roe']})</i>",
+                    f"D/E <b>{round(m['deRatio'], 2) if m['deRatio'] is not None else '—'}</b>",
+                    f"Promoter <b>{m['promoter'] if m['promoter'] is not None else '—'}%</b>",
+                    f"Pledge <b>{m['pledged'] if m['pledged'] is not None else 'not in scan'}</b>",
+                ])
+                st.markdown(f"<div style='font-size: 13px; color: #555; margin-bottom: 14px;'>{fact_line}</div>", unsafe_allow_html=True)
+
+                sc1, sc2, sc3, sc4 = st.columns(4)
+                STATUS_ICON = {"pass": "✅", "fail": "❌", "unknown": "➖", "estimate": "🟡", "manual": "🔵"}
+
+                def _render_bucket(container, title, bucket):
+                    with container:
+                        st.markdown(f"**{title} — {bucket['points']}/{bucket['max']}**")
+                        for item in bucket["items"]:
+                            icon = STATUS_ICON.get(item["status"], "•")
+                            val = f" · {item['valueText']}" if item.get("valueText") else ""
+                            st.markdown(f"{icon} {item['label']}{val} &nbsp;→&nbsp; **{item['points']}**", unsafe_allow_html=True)
+                            if item.get("note"):
+                                st.caption(f"↳ {item['note']}")
+
+                _render_bucket(sc1, "GROWTH", row["growth"])
+                _render_bucket(sc2, "VALUATION", row["valuation"])
+                _render_bucket(sc3, "QUALITY", row["quality"])
+                _render_bucket(sc4, "LYNCH STORY", row["story"])
+
+                # Layer-3 story overrides
+                with st.expander("✍️ Layer 3 — override the Story bucket with your own judgement", expanded=False):
+                    st.caption(
+                        "Auto-proxy fills these from sector, market cap and growth trends. Type your own marks after reading "
+                        "the annual report — the total (and the ranking) updates immediately. Leave a field untouched to keep the auto value."
+                    )
+                    ocols = st.columns(3)
+                    for idx, item in enumerate(LYNCH_STORY_ITEMS):
+                        with ocols[idx % 3]:
+                            st.number_input(
+                                f"{item['label']} (auto {row['story']['auto'][item['key']]})",
+                                min_value=0.0, max_value=float(item["max"]), step=0.5,
+                                value=float(row["story"]["auto"][item["key"]]),
+                                key=f"lynch_story__{row['symbol']}__{item['key']}",
+                            )
+                    if st.button("↺ Reset this stock's Story marks to auto", key=f"lynch_reset_{row['symbol']}"):
+                        for item in LYNCH_STORY_ITEMS:
+                            st.session_state.pop(f"lynch_story__{row['symbol']}__{item['key']}", None)
+                        st.rerun()
+
+                # Layer-1 verdict + research links
+                screen_res = row["screen"]
+                if screen_res["pass"]:
+                    st.success(f"✅ **Layer-1 check:** passes {LYNCH_SCREENS[screen_id]['name']}"
+                               + (f" · unverified (not in scan): {', '.join(screen_res['unverified'])}" if screen_res["unverified"] else ""))
+                else:
+                    st.error("❌ **Layer-1 check:** fails — " + " · ".join(screen_res["failed"][:4]))
+                lk1, lk2 = st.columns(2)
+                with lk1:
+                    st.markdown(f"[📊 Screener.in — {row['symbol']}](https://www.screener.in/company/{row['symbol']}/consolidated/)")
+                with lk2:
+                    st.markdown(f"[📄 Annual report / investor presentation — {row['symbol']}](https://www.google.com/search?q={row['symbol']}+annual+report+investor+presentation)")
+
+                if unverified_all:
+                    st.caption("⚠️ Layer-1 criteria that could not be verified from scan data (stocks are kept, not failed): " + " · ".join(unverified_all))
+
+            # ── Rubric + questions ──
+            st.markdown("---")
+            rub1, rub2 = st.columns([1, 1])
+            with rub1:
+                st.subheader("📊 The scoring table")
+                rubric_rows = []
+                rubric_rows += [{"Category": "GROWTH", "Test": t["label"], "Points": t["max"]} for t in LYNCH_GROWTH_TESTS]
+                rubric_rows += [{"Category": "VALUATION", "Test": b["label"], "Points": b["points"]} for b in LYNCH_PEG_BANDS]
+                rubric_rows += [
+                    {"Category": "QUALITY", "Test": "ROCE > 20%", "Points": 5},
+                    {"Category": "QUALITY", "Test": "ROE > 20%", "Points": 4},
+                    {"Category": "QUALITY", "Test": "Positive / healthy cash flow", "Points": 4},
+                    {"Category": "QUALITY", "Test": "CFO reasonably tracks PAT", "Points": 3},
+                    {"Category": "QUALITY", "Test": "Debt/Equity < 0.5", "Points": 2},
+                    {"Category": "QUALITY", "Test": "Promoter pledge = 0", "Points": 2},
+                ]
+                rubric_rows += [{"Category": "LYNCH STORY", "Test": t["label"], "Points": t["max"]} for t in LYNCH_STORY_ITEMS]
+                st.dataframe(pd.DataFrame(rubric_rows), use_container_width=True, hide_index=True, height=380)
+                st.dataframe(pd.DataFrame([
+                    {"Score": "90–100", "Grade": "A+", "Decision": LYNCH_GRADES[0]["decision"]},
+                    {"Score": "80–89", "Grade": "A", "Decision": LYNCH_GRADES[1]["decision"]},
+                    {"Score": "70–79", "Grade": "B", "Decision": LYNCH_GRADES[2]["decision"]},
+                    {"Score": "60–69", "Grade": "C", "Decision": LYNCH_GRADES[3]["decision"]},
+                    {"Score": "below 60", "Grade": "D", "Decision": LYNCH_GRADES[4]["decision"]},
+                ]), use_container_width=True, hide_index=True)
+            with rub2:
+                st.subheader("🔎 Layer 3 — ask these 10 questions (Top 5 only)")
+                st.markdown("\n".join([f"**{i}.** {q}" for i, q in enumerate(LYNCH_QUESTIONS, start=1)]))
+                st.info(
+                    "Nothing enters the portfolio from this page. Layer 2 tells you **where to spend research time** — "
+                    "the last question (“why is the market giving me this stock at this valuation?”) decides whether the "
+                    "score is an opportunity or a warning."
+                )
+                st.caption("Engine: `lynch_engine.py` · React twin: `frontend/src/pages/PeterLynch.jsx`")
 
     elif engine_page == "🏭 Page 5: Sectors & Industries":
         

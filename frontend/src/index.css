@@ -485,6 +485,179 @@ select.input { cursor: pointer; }
   50% { opacity: 0.5; transform: scale(0.85); }
 }
 
+/* ═══════════════════════════════════════════════════════════════
+   PETER LYNCH 100-POINT SYSTEM  (page: /peter-lynch)
+   ═══════════════════════════════════════════════════════════════ */
+.lynch-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+/* Screener.in query block */
+.lynch-query {
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--gold);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  margin: 0;
+  font-family: ui-monospace, 'Cascadia Code', Consolas, monospace;
+  font-size: 11.5px;
+  line-height: 1.75;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  overflow-x: auto;
+}
+
+/* Pool-mode chips */
+.lynch-chip {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  border-radius: 20px;
+  padding: 7px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: 'Inter', sans-serif;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+.lynch-chip:hover { border-color: var(--border-bright); color: var(--text-primary); }
+.lynch-chip.active {
+  background: var(--blue-dim);
+  border-color: var(--blue);
+  color: var(--blue);
+  box-shadow: var(--blue-glow);
+}
+
+/* Score columns */
+.lynch-cell { display: flex; flex-direction: column; gap: 5px; min-width: 76px; font-size: 12px; font-weight: 600; }
+.lynch-bar { height: 4px; border-radius: 3px; background: rgba(255, 255, 255, 0.08); overflow: hidden; }
+.lynch-bar-fill { height: 100%; border-radius: 3px; background: var(--blue); transition: width var(--transition); }
+.lynch-bar-fill.blue   { background: var(--blue); }
+.lynch-bar-fill.gold   { background: var(--gold); }
+.lynch-bar-fill.green  { background: var(--green); }
+.lynch-bar-fill.orange { background: var(--orange); }
+
+.lynch-total { font-family: 'Outfit', sans-serif; font-weight: 800; font-size: 17px; }
+.lynch-total.gold   { color: var(--gold); }
+.lynch-total.green  { color: var(--green); }
+.lynch-total.blue   { color: var(--blue); }
+.lynch-total.orange { color: var(--orange); }
+.lynch-total.red    { color: var(--red); }
+
+.lynch-grade {
+  display: inline-block;
+  padding: 3px 9px;
+  border-radius: 6px;
+  font-weight: 800;
+  font-size: 12px;
+}
+.lynch-grade.gold   { background: var(--gold-dim); color: var(--gold); }
+.lynch-grade.green  { background: var(--green-dim); color: var(--green); }
+.lynch-grade.blue   { background: var(--blue-dim); color: var(--blue); }
+.lynch-grade.orange { background: rgba(255, 159, 67, 0.12); color: var(--orange); }
+.lynch-grade.red    { background: var(--red-dim); color: var(--red); }
+
+.lynch-medal td { background: rgba(255, 215, 0, 0.05); }
+
+/* Expanded score card */
+.lynch-detail { padding: 8px 4px 12px; }
+.lynch-detail-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  margin-bottom: 14px;
+}
+.lynch-detail-facts b { color: var(--text-primary); font-weight: 600; }
+
+.lynch-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+.lynch-detail-col {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+}
+.lynch-detail-title {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+.lynch-detail-title span { color: var(--gold); }
+
+.lynch-test {
+  display: grid;
+  grid-template-columns: 10px 1fr auto;
+  gap: 8px;
+  align-items: start;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  padding: 3px 0;
+}
+.lynch-test b { color: var(--text-primary); }
+.lynch-test-label em { font-style: normal; color: var(--text-muted); }
+.lynch-dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 4px; background: var(--text-muted); }
+.lynch-dot.pass     { background: var(--green); }
+.lynch-dot.fail     { background: var(--red); }
+.lynch-dot.unknown  { background: var(--text-muted); }
+.lynch-dot.estimate { background: var(--gold); }
+.lynch-dot.manual   { background: var(--blue); }
+.lynch-note { grid-column: 2 / -1; font-size: 10.5px; font-style: italic; color: var(--text-muted); }
+
+.lynch-override { margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--border); }
+.lynch-override-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; }
+.lynch-override-grid label { display: flex; flex-direction: column; gap: 3px; font-size: 10.5px; color: var(--text-muted); }
+.lynch-override-grid .input { padding: 4px 8px; font-size: 11.5px; }
+
+.lynch-detail-foot { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--border); }
+
+/* Rubric table */
+.lynch-rubric { font-size: 12px; max-height: 420px; overflow-y: auto; }
+.lynch-rubric-head {
+  margin: 12px 0 4px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--blue);
+}
+.lynch-rubric-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  color: var(--text-secondary);
+}
+.lynch-rubric-row b { color: var(--gold); }
+
+.lynch-legend { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; font-size: 11px; color: var(--text-muted); }
+.tag-est     { background: var(--gold-dim); color: var(--gold); }
+.tag-unknown { background: rgba(255, 255, 255, 0.07); color: var(--text-muted); }
+.tag-manual  { background: var(--blue-dim); color: var(--blue); }
+
+@media (max-width: 1100px) {
+  .lynch-detail-grid { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 700px) {
+  .lynch-detail-grid { grid-template-columns: 1fr; }
+}
+
 /* ── Responsive ────────────────────────────────────────────── */
 @media (max-width: 768px) {
   .sidebar { display: none; }

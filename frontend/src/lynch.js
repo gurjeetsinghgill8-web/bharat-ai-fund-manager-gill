@@ -574,10 +574,12 @@ export function applyScreen(metrics, screenId) {
 
 // ── Output helpers ──────────────────────────────────────────────────────────
 export function toCsv(rows) {
+  // Column order here is the on-screen order too: Market Cap and Decision come first.
   const head = [
-    'Rank', 'Symbol', 'Sector', 'Growth/40', 'Valuation/20', 'Quality/20', 'Story/20',
-    'Total/100', 'Grade', 'Decision', 'PEG', 'Sales3Y%', 'Sales5Y%', 'Profit3Y%', 'Profit5Y%',
-    'SalesGrowth%', 'ProfitGrowth%', 'ROCE%', 'ROE%', 'Debt/Equity', 'MCap(Cr)', 'Promoter%',
+    'Rank', 'Symbol', 'MCap(Cr)', 'Decision', 'Grade', 'Total/100', 'Sector',
+    'Growth/40', 'Valuation/20', 'Quality/20', 'Story/20',
+    'PEG', 'Sales3Y%', 'Sales5Y%', 'Profit3Y%', 'Profit5Y%',
+    'ROCE%', 'ROE%', 'Debt/Equity', 'Promoter%',
   ];
   const esc = (v) => {
     const s = v === null || v === undefined ? '' : String(v);
@@ -586,10 +588,11 @@ export function toCsv(rows) {
   const lines = rows.map((r, i) => {
     const m = r.metrics;
     return [
-      i + 1, r.symbol, r.sector, r.growth.points, r.valuation.points, r.quality.points, r.story.points,
-      r.total, r.grade, r.decision, m.peg, m.sales3y, m.sales5y, m.profit3y, m.profit5y,
-      m.salesGrowth, m.profitGrowth, m.roce, m.roe,
-      m.deRatio === null ? '' : m.deRatio.toFixed(2), m.mcap, m.promoter,
+      i + 1, r.symbol, m.mcap === null ? '' : Math.round(m.mcap), r.decision, r.grade, r.total, r.sector,
+      r.growth.points, r.valuation.points, r.quality.points, r.story.points,
+      m.peg, m.sales3y, m.sales5y, m.profit3y, m.profit5y,
+      m.roce, m.roe,
+      m.deRatio === null ? '' : m.deRatio.toFixed(2), m.promoter,
     ].map(esc).join(',');
   });
   return [head.join(','), ...lines].join('\n');

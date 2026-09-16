@@ -626,21 +626,26 @@ def rank_rows(records, overrides=None, screen_id="hybrid"):
 
 
 def rows_to_records(rows):
-    """Flat dicts, ready for pandas.DataFrame / st.dataframe."""
+    """Flat dicts, ready for pandas.DataFrame / st.dataframe.
+
+    Column order matters — it is the on-screen order. Market Cap and Decision come first
+    (right after the stock name) so size and verdict are visible without scrolling.
+    """
     out = []
     for i, r in enumerate(rows, start=1):
         m = r["metrics"]
         out.append({
             "Rank": i,
             "Stock": r["symbol"],
+            "MCap (Cr)": round(m["mcap"]) if m["mcap"] is not None else "",
+            "Decision": r["decision"],
+            "Grade": r["grade"],
+            "TOTAL /100": r["total"],
             "Sector": r["sector"],
             "Growth /40": r["growth"]["points"],
             "Valuation /20": r["valuation"]["points"],
             "Quality /20": r["quality"]["points"],
             "Story /20": r["story"]["points"],
-            "TOTAL /100": r["total"],
-            "Grade": r["grade"],
-            "Decision": r["decision"],
             "PEG": m["peg"] if m["peg"] is not None else "",
             "Sales 3Y %": m["sales3y"] if m["sales3y"] is not None else "",
             "Sales 5Y %": m["sales5y"] if m["sales5y"] is not None else "",
@@ -649,16 +654,16 @@ def rows_to_records(rows):
             "ROCE %": m["roce"] if m["roce"] is not None else "",
             "ROE %": m["roe"] if m["roe"] is not None else "",
             "Debt/Equity": round(m["deRatio"], 2) if m["deRatio"] is not None else "",
-            "MCap (Cr)": m["mcap"] if m["mcap"] is not None else "",
             "Story (manual)": "yes" if r["storyOverridden"] else "",
         })
     return out
 
 
 CSV_COLUMNS = [
-    "Rank", "Stock", "Sector", "Growth /40", "Valuation /20", "Quality /20", "Story /20", "TOTAL /100",
-    "Grade", "Decision", "PEG", "Sales 3Y %", "Sales 5Y %", "Profit 3Y %", "Profit 5Y %",
-    "ROCE %", "ROE %", "Debt/Equity", "MCap (Cr)", "Story (manual)",
+    "Rank", "Stock", "MCap (Cr)", "Decision", "Grade", "TOTAL /100", "Sector",
+    "Growth /40", "Valuation /20", "Quality /20", "Story /20",
+    "PEG", "Sales 3Y %", "Sales 5Y %", "Profit 3Y %", "Profit 5Y %",
+    "ROCE %", "ROE %", "Debt/Equity", "Story (manual)",
 ]
 
 

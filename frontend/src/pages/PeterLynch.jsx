@@ -360,13 +360,14 @@ export default function PeterLynch() {
                   <tr>
                     <th>#</th>
                     <th>Stock</th>
+                    <th>MCap ₹Cr</th>
+                    <th>Decision</th>
+                    <th>Grade</th>
+                    <th>TOTAL /100</th>
                     <th>Growth /40</th>
                     <th>Valuation /20</th>
                     <th>Quality /20</th>
                     <th>Story /20</th>
-                    <th>TOTAL /100</th>
-                    <th>Grade</th>
-                    <th>Decision</th>
                     <th>PEG</th>
                     <th></th>
                   </tr>
@@ -382,16 +383,23 @@ export default function PeterLynch() {
                             <div style={{ fontWeight: 600 }}>{r.symbol} {r.storyOverridden && <span className="tag tag-manual">manual story</span>}</div>
                             <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{r.sector} · {r.industry}</div>
                           </td>
-                          <td><div className="lynch-cell"><span>{r.growth.points}</span><ScoreBar value={r.growth.points} max={40} tone="blue" /></div></td>
-                          <td><div className="lynch-cell"><span>{r.valuation.points}</span><ScoreBar value={r.valuation.points} max={20} tone="gold" /></div></td>
-                          <td><div className="lynch-cell"><span>{r.quality.points}</span><ScoreBar value={r.quality.points} max={20} tone="green" /></div></td>
-                          <td><div className="lynch-cell"><span>{r.story.points}</span><ScoreBar value={r.story.points} max={20} tone="orange" /></div></td>
+                          <td>
+                            {r.metrics.mcap === null
+                              ? '—'
+                              : <span className={`badge ${r.metrics.mcap >= 20000 ? 'badge-gold' : r.metrics.mcap >= 5000 ? 'badge-blue' : 'badge-orange'}`}>
+                                  ₹{Math.round(r.metrics.mcap).toLocaleString('en-IN')}Cr
+                                </span>}
+                          </td>
+                          <td style={{ fontSize: 12 }}>{r.decision}</td>
+                          <td><span className={`lynch-grade ${r.tone}`}>{r.grade}</span></td>
                           <td>
                             <span className={`lynch-total ${r.tone}`}>{r.total}</span>
                             {r.warnings.length > 0 && <span title={r.warnings.join(' · ')} style={{ marginLeft: 6, cursor: 'help' }}>⚠️</span>}
                           </td>
-                          <td><span className={`lynch-grade ${r.tone}`}>{r.grade}</span></td>
-                          <td style={{ fontSize: 12 }}>{r.decision}</td>
+                          <td><div className="lynch-cell"><span>{r.growth.points}</span><ScoreBar value={r.growth.points} max={40} tone="blue" /></div></td>
+                          <td><div className="lynch-cell"><span>{r.valuation.points}</span><ScoreBar value={r.valuation.points} max={20} tone="gold" /></div></td>
+                          <td><div className="lynch-cell"><span>{r.quality.points}</span><ScoreBar value={r.quality.points} max={20} tone="green" /></div></td>
+                          <td><div className="lynch-cell"><span>{r.story.points}</span><ScoreBar value={r.story.points} max={20} tone="orange" /></div></td>
                           <td>{r.metrics.peg === null ? '—' : <span className={`badge ${r.metrics.peg < 1 ? 'badge-green' : 'badge-orange'}`}>{r.metrics.peg.toFixed(2)}</span>}</td>
                           <td>
                             <button className="btn btn-sm btn-outline" onClick={() => setOpen(isOpen ? '' : r.symbol)}>
@@ -401,7 +409,7 @@ export default function PeterLynch() {
                         </tr>
                         {isOpen && (
                           <tr key={`${r.symbol}-detail`}>
-                            <td colSpan={11} style={{ background: 'var(--bg-secondary)' }}>
+                            <td colSpan={12} style={{ background: 'var(--bg-secondary)' }}>
                               <ScoreDetail
                                 row={r}
                                 mode={mode}

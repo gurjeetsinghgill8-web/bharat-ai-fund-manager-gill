@@ -68,7 +68,7 @@ def fetch_stock_data(ticker, force_refresh=False):
         if not ticker.endswith(".NS") and not ticker.endswith(".BO"):
             ticker = f"{ticker}.NS"
         t = yf.Ticker(ticker)
-        
+
         # 1. Fetch Price History
         hist = t.history(period="max")
         if hist.empty:
@@ -104,9 +104,12 @@ def fetch_stock_data(ticker, force_refresh=False):
         # The screener cache persists for 14 days, so repeated scans are instant.
         
         # Try screeners.in first for reliable CAGR data
-        # Cache is checked internally — no network call if cached
-        screener_result = fetch_screener_data(ticker, force_refresh=force_refresh)
-        
+        # Cache is checked internally — no network call if cached.
+        # `require_balance_sheet` is True for banks/NBFCs: their scoring needs the lender
+        # balance sheet, which only exists on a cache_version >= 2 screener page.
+        screener_result = fetch_screener_data(ticker, force_refresh=force_refresh,
+                                             require_balance_sheet=_is_lender_ticker(ticker))
+
         if screener_result["success"] and len(screener_result["sales"]) >= 5:
             sales_history = screener_result["sales"]
             profit_history = screener_result["profit"]
@@ -124,6 +127,14 @@ def fetch_stock_data(ticker, force_refresh=False):
                 profit_keys = [k for k in financials.index if 'Net Income' in k or 'Profit' in k]
                 if profit_keys:
                     profit_history = financials.loc[profit_keys[0]].dropna().tolist()
+
+        # ── Full balance sheet from screener.in (₹ Cr) ──────────────────────────────
+        # net_worth_cr = Equity Capital + Reserves = REAL shareholder equity. The yfinance
+        # "Reserves" we keep below is retained earnings, which understates equity for every
+        # company with issued share capital — so this improves the ROE estimate for everyone,
+        # and it is the only free source of a lender's total assets / borrowings / deposits,
+        # which the bank & NBFC scoring needs (see financial_engine.py).
+        bs = (screener_result.get("balance_sheet") or {}) if screener_result.get("success") else {}
                 
         # Extract Quarterly Profits (from yfinance — only needed for quarter_score)
         quarterly_financials = t.quarterly_financials
@@ -280,13 +291,60 @@ def fetch_stock_data(ticker, force_refresh=False):
             "sector": sector,
             "industry": industry,
             "exchange": exchange,
+            # ── Balance sheet (₹ Cr) — feeds the bank / NBFC scoring path ──
+            "net_worth_cr": bs.get("net_worth_cr"),
+            "equity_capital_cr": bs.get("equity_capital_cr"),
+            "balance_reserves_cr": bs.get("reserves_cr"),
+            "borrowings_cr": bs.get("borrowings_cr"),
+            "deposits_cr": bs.get("deposits_cr"),
+            "total_assets_cr": bs.get("total_assets_cr"),
+            "financing_margin_pct": bs.get("financing_margin_pct"),
             "timestamp": datetime.datetime.now(),
-            "_cache_version": 5  # v5 = added roe_pct, roce_pct, operating_cash_flow (Peter Lynch scoring)
+            "_cache_version": 6,  # v5 = roe_pct/roce_pct/OCF (Lynch) · v6 = balance sheet + lender fields
+            "_lender_v": 2,       # this record was written by a fetcher that knows about lenders
         }
         return data
     except Exception as e:
         print(f"Error fetching data for {ticker}: {str(e)}")
         return None
+
+def _needs_lender_refresh(cached):
+    """True for a bank / NBFC cached before the balance-sheet upgrade.
+
+    The lender scoring path (financial_engine.py) needs real net worth, borrowings and total
+    assets. Those fields only exist on records written since `_lender_v = 2`, so LENDER records
+    get exactly one forced refresh. A manufacturer keeps its cache and costs nothing — which is
+    what stops this upgrade from turning into a 1,682-stock refetch.
+    """
+    try:
+        # Already upgraded AND carrying a real balance sheet → nothing to do.
+        if cached.get("_lender_v", 0) >= 2 and cached.get("net_worth_cr"):
+            return False
+        import financial_engine
+        return financial_engine.is_lender(cached)
+    except Exception:
+        return False
+
+
+def _is_lender_ticker(ticker):
+    """Is this ticker a bank / NBFC, judged from the sector + industry already in its .pkl?
+
+    Reads the local cache only — never a network call — so it costs nothing for the ~1,500
+    manufacturers that are not lenders, and it lets the screener fetch ask for the lender
+    balance sheet exactly when it is needed. With nothing cached yet we answer False; the
+    first scan stores sector/industry, and from then on the call is correct.
+    """
+    try:
+        import financial_engine
+        path = get_cache_path(ticker)
+        if not os.path.exists(path):
+            return False
+        with open(path, 'rb') as f:
+            cached = pickle.load(f)
+        return financial_engine.is_lender(cached)
+    except Exception:
+        return False
+
 
 def get_stock_data(ticker, force_refresh=False):
     cache_path = get_cache_path(ticker)
@@ -303,13 +361,19 @@ def get_stock_data(ticker, force_refresh=False):
             elif len(cached.get("sales_history", [])) < 5 or len(cached.get("profit_history", [])) < 5:
                 print(f"{ticker}: Cache has insufficient history ({len(cached.get('sales_history', []))} sales pts), refetching...")
                 force_refresh = True
+            elif _needs_lender_refresh(cached):
+                print(f"{ticker}: Lender cached without a balance sheet, refetching for bank/NBFC scoring...")
+                force_refresh = True
             else:
                 return cached
         except Exception:
             force_refresh = True
             
     # Fetch fresh data
-    data = fetch_stock_data(ticker)
+    # NOTE: force_refresh must be forwarded — previously it was dropped here, so an expired
+    # screener.in cache silently kept serving a stale (and, after the balance-sheet upgrade,
+    # incomplete) result even when a full refresh was requested.
+    data = fetch_stock_data(ticker, force_refresh=force_refresh)
     if data:
         try:
             with open(cache_path, 'wb') as f:

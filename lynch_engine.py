@@ -21,6 +21,16 @@ Market Cap ÷ PE and Reserves), "unknown" (fixed at 0 — never invented) or "ma
 
 from __future__ import annotations
 
+from financial_engine import (
+    apply_lender_screen,
+    is_lender,
+    lender_flags,
+    lender_metrics,
+    lender_quality_items,
+    LENDER_QUERY,
+    LENDER_QUERY_NOTE,
+)
+
 # ── Grade bands ─────────────────────────────────────────────────────────────
 GRADE_BANDS = [
     {"min": 90, "grade": "A+", "decision": "⭐ Deep study", "tone": "gold"},
@@ -104,6 +114,19 @@ SCREEN_DEFS = {
         "id": "hybrid", "icon": "⭐", "name": "Lynch Hybrid",
         "blurb": ">15% growth · PEG < 1 · ROCE/ROE > 15 · D/E < 0.75 · no pledge",
         "query": HYBRID_QUERY,
+    },
+    # ── 🏦 BANKS & NBFC — the lender basket ──────────────────────────────────
+    # A bank or an NBFC can never pass the two baskets above: D/E < 0.75 is impossible when
+    # borrowing is the raw material, and ROCE is meaningless when the "capital employed" IS
+    # the loan book. Rather than let lenders fall out of the scan, they get their own basket
+    # and their own rubric — ROA, the capital cushion, and NPA. Selecting this chip shows
+    # lenders only; the Elite / Hybrid chips judge a lender with its own rubric rather than
+    # dropping it.
+    "financials": {
+        "id": "financials", "icon": "🏦", "name": "Banks & NBFC",
+        "blurb": ">15% growth · PEG < 1.2 · ROA > 1% · ROE > 15% · capital cushion · NPA when known",
+        "query": LENDER_QUERY,
+        "note": LENDER_QUERY_NOTE,
     },
     "all": {
         "id": "all", "icon": "📚", "name": "Everything scanned",
@@ -228,7 +251,21 @@ def grade_of(total: float) -> dict:
 
 
 # ── METRICS ─────────────────────────────────────────────────────────────────
-def lynch_metrics(stock) -> dict:
+# Manual lender facts the user types into the score card, keyed the way the UI stores them
+# and mapped onto the column names financial_engine looks for. NPA is login-walled on
+# Screener.in, so this is how the NPA lens actually gets switched on.
+LENDER_FACT_KEYS = {
+    "gnpa": "Gross NPA %",
+    "nnpa": "Net NPA %",
+    "pcr": "Provision Coverage %",
+    "car": "Capital Adequacy %",
+}
+
+
+def lynch_metrics(stock, facts=None) -> dict:
+    if facts:
+        stock = {**stock, **{LENDER_FACT_KEYS[k]: v for k, v in facts.items() if k in LENDER_FACT_KEYS and v not in (None, "")}}
+
     sales3y = _num(stock, ALIASES["sales3y"])
     sales5y_raw = _num(stock, ALIASES["sales5y"])
     profit3y = _num(stock, ALIASES["profit3y"])
@@ -265,11 +302,25 @@ def lynch_metrics(stock) -> dict:
     pledged = _num(stock, ALIASES["pledged"])
     red_alert = _bool(stock, ALIASES["redAlert"])
 
+    # ── LENDER PATH ─────────────────────────────────────────────────────────
+    # For a bank / NBFC, ROCE is meaningless and Debt/Equity < 0.5 is impossible, so the
+    # ordinary Quality bucket would hand a perfectly good lender 0/20 and Layer-1 would then
+    # drop it from the scan entirely. Lenders get their own metrics (ROA, capital cushion,
+    # NPA, P/B) and their own Quality bucket — see financial_engine.py.
+    lender = None
+    if is_lender(stock):
+        lender = lender_metrics(stock, pat_cr=pat_cr, mcap=mcap, pe=pe)
+        roce = None                      # not a lender metric — never score it
+        if lender["roe"] is not None:
+            roe = lender["roe"]
+
     return {
         "symbol": stock_symbol(stock),
         "sector": stock.get("Sector") or stock.get("sector") or "Unknown",
         "industry": stock.get("Industry") or stock.get("industry") or "Unknown",
         "category": stock.get("Category") or stock.get("category") or "",
+        "isLender": lender is not None,
+        "lender": lender,
 
         "sales3y": sales3y,
         "sales5y": sales5y,
@@ -350,6 +401,12 @@ def _score_valuation(m):
 
 # ── QUALITY /20 ─────────────────────────────────────────────────────────────
 def _score_quality(m):
+    # A lender's 20 marks come from ROA, the capital cushion and asset quality — not from
+    # ROCE and D/E. Same total, same ✅/❌/➖ shape, so the score card renders identically.
+    if m.get("isLender"):
+        items = lender_quality_items(m["lender"])
+        return {"points": sum(i["points"] for i in items), "max": QUALITY_MAX, "items": items}
+
     items = []
 
     items.append({
@@ -540,8 +597,8 @@ def score_story(m, override=None) -> dict:
 
 
 # ── THE 100-POINT SCORE ─────────────────────────────────────────────────────
-def score_lynch(stock, story_override=None) -> dict:
-    m = lynch_metrics(stock)
+def score_lynch(stock, story_override=None, facts=None) -> dict:
+    m = lynch_metrics(stock, facts)
     growth = _score_growth(m)
     valuation = _score_valuation(m)
     quality = _score_quality(m)
@@ -553,7 +610,11 @@ def score_lynch(stock, story_override=None) -> dict:
     warnings = list(valuation["warnings"])
     if m["redAlert"] is True:
         warnings.append(f"Red alert: {m['redReasons'] or 'see scan'}")
-    if m["deRatio"] is not None and m["deRatio"] > 1:
+    if m.get("isLender"):
+        # A lender is not "debt-heavy" — it IS debt. Flag the things that actually break a
+        # lender instead: weak ROA, a thin capital cushion, and asset-quality stress.
+        warnings.extend(lender_flags(m["lender"]))
+    elif m["deRatio"] is not None and m["deRatio"] > 1:
         warnings.append(f"High leverage (D/E {m['deRatio']:.2f}) — Lynch disliked debt-heavy growth")
     if any(i["key"] == "profit3y" and i["status"] == "fail" for i in growth["items"]) and \
        any(i["key"] == "sales3y" and i["status"] == "pass" for i in growth["items"]):
@@ -570,9 +631,24 @@ def score_lynch(stock, story_override=None) -> dict:
 # ── LAYER-1 FILTERS ─────────────────────────────────────────────────────────
 def apply_screen(m, screen_id="hybrid") -> dict:
     """`required` checks must exist and pass; optional ones that are missing are reported as
-    unverified instead of silently rejecting the stock."""
+    unverified instead of silently rejecting the stock.
+
+    LENDER ROUTING — this is the fix for "why did CHOLAFIN never appear?". Selecting 🔥 Elite
+    or ⭐ Lynch Hybrid used to judge a bank/NBFC by ROCE and Debt/Equity, which no lender can
+    ever satisfy, so every bank and NBFC was filtered out of the ranking. A lender is now
+    judged by the lender rubric (ROA · capital cushion · NPA), and 🏦 Banks & NBFC shows the
+    lenders on their own. Either way a lender is RANKED, never silently dropped.
+    """
     if screen_id not in SCREEN_DEFS or screen_id == "all":
-        return {"pass": True, "unverified": [], "failed": []}
+        return {"pass": True, "unverified": [], "failed": [], "rubric": "standard"}
+
+    if screen_id == "financials":
+        if not m.get("isLender"):
+            return {"pass": False, "unverified": [], "failed": ["Not a bank / NBFC"], "rubric": "lender"}
+        return apply_lender_screen(m["lender"], tier="financials")
+
+    if m.get("isLender"):
+        return apply_lender_screen(m["lender"], tier="elite" if screen_id == "elite" else "hybrid")
 
     strict = screen_id == "elite"
     g = 20 if strict else 15
@@ -607,17 +683,44 @@ def apply_screen(m, screen_id="hybrid") -> dict:
         if not ok:
             passed = False
             failed.append(label)
-    return {"pass": passed, "unverified": unverified, "failed": failed}
+    return {"pass": passed, "unverified": unverified, "failed": failed, "rubric": "standard"}
 
 
 # ── Ranking helpers used by both the Streamlit page and the CLI ─────────────
-def rank_rows(records, overrides=None, screen_id="hybrid"):
-    """Score every record, keep the ones that pass the Layer-1 screen, sort by total desc."""
-    overrides = overrides or {}
-    rows = []
+def dedupe_by_symbol(records):
+    """One row per company, NSE winning over BSE.
+
+    89 names in the scan cache are listed on BOTH exchanges (CHOLAFIN.NS and CHOLAFIN.BO), and
+    `stock_symbol()` strips the .NS / .BO suffix — so an undeduplicated list ranks CHOLAFIN twice
+    with two different scores, doubles it in the sector averages, and makes the stock search show
+    the same name twice. NSE is the primary listing that the Screener.in queries match, so it is
+    the one kept. The Sectors page still sees both, because there the NSE-vs-BSE split is wanted.
+    """
+    best = {}
     for rec in records:
         sym = stock_symbol(rec)
-        scored = score_lynch(rec, overrides.get(sym))
+        if not sym:
+            continue
+        exch = str(rec.get("Exchange") or rec.get("exchange") or "").upper()
+        current = best.get(sym)
+        if current is None or (exch == "NSE" and current[0] != "NSE"):
+            best[sym] = (exch, rec)
+    return [rec for _, rec in best.values()]
+
+
+def rank_rows(records, overrides=None, screen_id="hybrid", facts=None):
+    """Score every record, keep the ones that pass the Layer-1 screen, sort by total desc.
+
+    `overrides` = your Layer-3 Story marks (keyed by symbol)
+    `facts`     = your manual lender facts — GNPA / NNPA / PCR / CAR — keyed by symbol, which
+                  is how the NPA line gets switched on for a bank or NBFC.
+    """
+    overrides = overrides or {}
+    facts = facts or {}
+    rows = []
+    for rec in dedupe_by_symbol(records):
+        sym = stock_symbol(rec)
+        scored = score_lynch(rec, overrides.get(sym), facts.get(sym))
         scored["screen"] = apply_screen(scored["metrics"], screen_id)
         if scored["screen"]["pass"]:
             rows.append(scored)
@@ -630,14 +733,20 @@ def rows_to_records(rows):
 
     Column order matters — it is the on-screen order. Market Cap and Decision come first
     (right after the stock name) so size and verdict are visible without scrolling.
+
+    Empty numeric cells are None, never "": a column that mixes "" with a float makes Arrow
+    serialisation fall back to a slow object column (Streamlit then warns about it), and it
+    would render as a literal "None" for the rows that have no value.
     """
     out = []
     for i, r in enumerate(rows, start=1):
         m = r["metrics"]
+        ld = m.get("lender") or {}
         out.append({
             "Rank": i,
             "Stock": r["symbol"],
-            "MCap (Cr)": round(m["mcap"]) if m["mcap"] is not None else "",
+            "Type": ("🏦 " + ld["kindLabel"].split(" /")[0]) if m.get("isLender") else "",
+            "MCap (Cr)": round(m["mcap"]) if m["mcap"] is not None else None,
             "Decision": r["decision"],
             "Grade": r["grade"],
             "TOTAL /100": r["total"],
@@ -646,24 +755,33 @@ def rows_to_records(rows):
             "Valuation /20": r["valuation"]["points"],
             "Quality /20": r["quality"]["points"],
             "Story /20": r["story"]["points"],
-            "PEG": m["peg"] if m["peg"] is not None else "",
-            "Sales 3Y %": m["sales3y"] if m["sales3y"] is not None else "",
-            "Sales 5Y %": m["sales5y"] if m["sales5y"] is not None else "",
-            "Profit 3Y %": m["profit3y"] if m["profit3y"] is not None else "",
-            "Profit 5Y %": m["profit5y"] if m["profit5y"] is not None else "",
-            "ROCE %": m["roce"] if m["roce"] is not None else "",
-            "ROE %": m["roe"] if m["roe"] is not None else "",
-            "Debt/Equity": round(m["deRatio"], 2) if m["deRatio"] is not None else "",
+            "PEG": m["peg"],
+            "Sales 3Y %": m["sales3y"],
+            "Sales 5Y %": m["sales5y"],
+            "Profit 3Y %": m["profit3y"],
+            "Profit 5Y %": m["profit5y"],
+            "ROCE %": m["roce"],
+            "ROE %": m["roe"],
+            "Debt/Equity": round(m["deRatio"], 2) if m["deRatio"] is not None else None,
+            # ── lender columns — blank for an ordinary company ──
+            "ROA %": ld.get("roa"),
+            "Net Worth (Cr)": round(ld["netWorthCr"]) if ld.get("netWorthCr") is not None else None,
+            "Capital % Assets": ld.get("capitalPct"),
+            "P/B": ld.get("pb"),
+            "GNPA %": ld.get("gnpa"),
+            "NNPA %": ld.get("nnpa"),
             "Story (manual)": "yes" if r["storyOverridden"] else "",
         })
     return out
 
 
 CSV_COLUMNS = [
-    "Rank", "Stock", "MCap (Cr)", "Decision", "Grade", "TOTAL /100", "Sector",
+    "Rank", "Stock", "Type", "MCap (Cr)", "Decision", "Grade", "TOTAL /100", "Sector",
     "Growth /40", "Valuation /20", "Quality /20", "Story /20",
     "PEG", "Sales 3Y %", "Sales 5Y %", "Profit 3Y %", "Profit 5Y %",
-    "ROCE %", "ROE %", "Debt/Equity", "Story (manual)",
+    "ROCE %", "ROE %", "Debt/Equity",
+    "ROA %", "Net Worth (Cr)", "Capital % Assets", "P/B", "GNPA %", "NNPA %",
+    "Story (manual)",
 ]
 
 
@@ -689,6 +807,12 @@ def top_five_text(rows, limit=5) -> str:
         peg = m["peg"] if m["peg"] is not None else "—"
         lines.append(f"{i}. {r['symbol']} — {r['total']}/100 ({r['grade']}) {r['decision']}")
         lines.append(f"   PEG {peg} · Sales 3Y {m['sales3y'] or '—'}% / 5Y {m['sales5y'] or '—'}% · Profit 3Y {m['profit3y'] or '—'}%")
+        if m.get("isLender"):
+            ld = m["lender"]
+            npa = (f"GNPA {ld['gnpa']}% / NNPA {ld['nnpa']}%"
+                   if ld.get("gnpa") is not None else "NPA not in scan — check Screener.in")
+            lines.append(f"   {ld['kindLabel']} · ROA {ld['roa'] or '—'}% · ROE {ld['roe'] or '—'}% · "
+                         f"capital {ld['capitalPct'] or '—'}% of assets · {npa}")
         lines.append(f"   Growth {r['growth']['points']}/40 · Valuation {r['valuation']['points']}/20 · "
                      f"Quality {r['quality']['points']}/20 · Story {r['story']['points']}/20")
     lines += ["", "Screener → 100-point score → Top 5 → deep research"]

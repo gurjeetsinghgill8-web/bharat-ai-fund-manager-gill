@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 from symbols import get_category
+from financial_engine import is_lender, is_financial, lender_metrics, lender_flags
 
 
 # ══════════════════════════════════════════════════════════════
@@ -232,7 +233,13 @@ def score_stock(stock_data):
         red_reasons.append("Profit dropped > 35% from peak")
     # Normalise Debt/Equity (yfinance often returns as percentage, e.g. 10.38 for 10.38%)
     debt_decimal = debt_eq / 100.0 if debt_eq > 5.0 else debt_eq
-    if debt_decimal > 2.0:
+    # ── A LENDER IS NOT LEVERAGED, IT IS A LENDER ──────────────────────────────
+    # Borrowing is the raw material of a bank or an NBFC: CHOLAFIN runs at D/E ≈ 6.9 and
+    # HDFCBANK at roughly 12× assets/net-worth, by design and by regulation. Raising a
+    # "High Debt/Equity" red alert on that flagged every NBFC in India as toxic — one of the
+    # two reasons CHOLAFIN never showed up. For a financial, leverage is judged by the
+    # capital cushion (net worth ÷ total assets) in financial_engine.lender_flags() instead.
+    if debt_decimal > 2.0 and not is_financial(stock_data):
         is_red_alert = True
         red_reasons.append(f"High Debt/Equity Ratio ({round(debt_decimal, 2)})")
     if (stock_data.get("reserves") or 0.0) < 0:
@@ -339,6 +346,27 @@ def score_stock(stock_data):
     # Sales+Profit CAGR Total (quick sum metric)
     sales_profit_cagr_total = (sales_cagr_all if sales_cagr_all else 0) + (profit_cagr_all if profit_cagr_all else 0)
 
+    # ══════════════════════════════════════════════════════════════
+    # LENDER PATH (banks · NBFC · housing finance) — financial_engine.py
+    # ══════════════════════════════════════════════════════════════
+    # A lender is judged on return on assets, the capital cushion and asset quality, not on
+    # ROCE ("capital employed" is meaningless when the capital IS the loan book) or on
+    # D/E < 0.5. Everything below is emitted as flat columns so BOTH the Streamlit Peter Lynch
+    # page and the React one (which reads the saved scan records) score lenders identically.
+    lender = None
+    if is_lender(stock_data):
+        lender = lender_metrics(
+            {**stock_data,
+             "Sales CAGR 3Y": sales_cagr_3y, "Sales CAGR 5Y": sales_cagr_5y,
+             "Profit CAGR 3Y": profit_cagr_3y, "Profit CAGR 5Y": profit_cagr_5y,
+             "Sales Growth": sales_growth_latest, "Profit Growth": profit_growth_latest,
+             "PEG Ratio": peg_ratio, "Market Cap (Cr)": market_cap_cr, "PE": pe},
+            mcap=market_cap_cr, pe=pe,
+        )
+        for _flag in lender_flags(lender):
+            is_red_alert = True
+            red_reasons.append(_flag)
+
     return {
         "Ticker": ticker,
         "symbol": ticker,
@@ -394,9 +422,36 @@ def score_stock(stock_data):
         "Red Alert": is_red_alert,
         "Red Reasons": ", ".join(red_reasons) if red_reasons else "None",
         "Momentum Status": momentum_status,
-        "Debt/Equity": round(debt_eq, 2),
-        "ROE %": _num_or_none(stock_data.get("roe_pct")),
+        # Normalised decimal (0.21 = 21%), not yfinance's raw percent form (21.31).
+        "Debt/Equity": lender["deRatio"] if lender else round(debt_decimal, 2),
+        # For a lender, ROE comes from the real balance sheet (PAT ÷ net worth) because
+        # yfinance does not publish returnOnEquity for Indian banks and its "Reserves" field
+        # is retained earnings, not equity. ROCE stays blank — it is not a lender metric.
+        "ROE %": (lender["roe"] if (lender and lender["roe"] is not None)
+                  else _num_or_none(stock_data.get("roe_pct"))),
         "ROCE %": _num_or_none(stock_data.get("roce_pct")),
+        # ── LENDER COLUMNS (banks · NBFC · housing finance) — see financial_engine.py ──
+        # For a non-lender these stay empty/False and nothing downstream changes.
+        "Is Lender": bool(lender),
+        "Is Financial": bool(is_financial(stock_data)),
+        "Lender Kind": lender["kindLabel"] if lender else "",
+        "Net Worth (Cr)": lender["netWorthCr"] if lender else None,
+        "Borrowings (Cr)": lender["borrowingsCr"] if lender else None,
+        "Deposits (Cr)": lender["depositsCr"] if lender else None,
+        "Total Assets (Cr)": lender["totalAssetsCr"] if lender else None,
+        "PAT (Cr)": lender["patCr"] if lender else None,
+        "ROA %": lender["roa"] if lender else None,
+        "Capital % of Assets": lender["capitalPct"] if lender else None,
+        "Leverage (x net worth)": lender["fundingX"] if lender else None,
+        "P/B": lender["pb"] if lender else None,
+        "Financing Margin %": lender["financingMargin"] if lender else None,
+        # Asset quality — screener.in blanks NPA behind a login, so these are normally None.
+        # The score card takes them as a MANUAL entry and never invents a value.
+        "Gross NPA %": None,
+        "Net NPA %": None,
+        "Provision Coverage %": None,
+        "Capital Adequacy %": None,
+        "Lender Metric Sources": lender["source"] if lender else None,
         "CFO/PAT": _num_or_none(
             (stock_data.get("operating_cash_flow") or 0.0) / stock_data.get("cashflow_net_income")
             if stock_data.get("cashflow_net_income") else None

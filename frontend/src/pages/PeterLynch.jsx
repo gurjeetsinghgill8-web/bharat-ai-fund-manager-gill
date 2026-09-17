@@ -1,20 +1,28 @@
 // src/pages/PeterLynch.jsx — Page: DR GILL · PETER LYNCH 100-POINT SYSTEM
 //
-// LAYER 1 — MACHINE FILTER   : the Screener.in queries (Elite / Lynch Hybrid) → candidate pool
+// LAYER 1 — MACHINE FILTER   : the Screener.in queries (Elite / Hybrid / Banks & NBFC) → pool
 // LAYER 2 — 100-POINT RANKING: Growth /40 · Valuation /20 · Quality /20 · Lynch Story /20
 // LAYER 3 — HUMAN RESEARCH   : read the annual report and override the Story bucket by hand
 //
 // The ranking pool is the GURJAS 1 + GURJAS 2 result set of the last scan. Layer-1 filters are
-// re-applied in the browser on top of it, so you can flip between Elite / Hybrid / Everything
-// without running a new scan.
+// re-applied in the browser on top of it, so you can flip between the baskets without a new scan.
+//
+// 🏦 BANKS & NBFC — a bank or an NBFC is scored on ROA, its capital cushion and NPA rather than
+// on ROCE / Debt/Equity, which no lender can satisfy. See src/lender.js. NPA is login-walled at
+// Screener.in, so the score card takes it as a manual entry — that is the asset-quality box.
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { getGurjas1, getGurjas2, getScanStatus, triggerScan } from '../api';
 import {
   SCREEN_DEFS, GRADE_BANDS, GROWTH_TESTS, PEG_BANDS, STORY_ITEMS,
-  scoreLynch, applyScreen, stockSymbol, toCsv, topFiveText,
+  scoreLynch, applyScreen, stockSymbol, dedupeBySymbol, toCsv, topFiveText,
 } from '../lynch';
+import { LENDER_QUERY_NOTE } from '../lender';
+import ClearableInput from '../components/ClearableInput';
 
 const STORE_KEY = 'lynch_story_overrides_v1';
+// Manual Gross/Net NPA, provision coverage and CAR, per symbol. Screener.in prints those rows
+// but blanks the values behind a login, so this is where the NPA lens is switched on by hand.
+const FACTS_KEY = 'lynch_lender_facts_v1';
 const QUESTIONS = [
   'What does the company actually sell?',
   'Why are sales growing?',
@@ -31,6 +39,13 @@ const QUESTIONS = [
 function loadOverrides() {
   try {
     const raw = localStorage.getItem(STORE_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch { return {}; }
+}
+
+function loadFacts() {
+  try {
+    const raw = localStorage.getItem(FACTS_KEY);
     return raw ? JSON.parse(raw) : {};
   } catch { return {}; }
 }
@@ -83,6 +98,7 @@ export default function PeterLynch() {
   const [sortKey, setSortKey]       = useState('total');
   const [open, setOpen]             = useState(params.get('stock') || '');
   const [overrides, setOverrides]   = useState(loadOverrides);
+  const [facts, setFacts]           = useState(loadFacts);
   const [showRubric, setShowRubric] = useState(false);
 
   async function fetchData() {
@@ -95,12 +111,10 @@ export default function PeterLynch() {
       if (r1.status === 'fulfilled') list.push(...(r1.value.data.stocks || []));
       if (s.status === 'fulfilled') setScanStatus(s.value.data);
 
-      const merged = new Map();
-      for (const st of list) {
-        const sym = stockSymbol(st);
-        if (sym && !merged.has(sym)) merged.set(sym, st);
-      }
-      setPool([...merged.values()]);
+      // dedupeBySymbol, not a naive map: 89 names are listed on BOTH NSE and BSE and the symbol
+      // normaliser strips the suffix, so without this CHOLAFIN is ranked twice, with two
+      // different scores. NSE wins as the primary listing.
+      setPool(dedupeBySymbol(list));
       if (list.length === 0) {
         setError('No screener results available yet — run a scan (or press Refresh once the backend is awake).');
       }
@@ -116,6 +130,10 @@ export default function PeterLynch() {
     try { localStorage.setItem(STORE_KEY, JSON.stringify(overrides)); } catch { /* ignore */ }
   }, [overrides]);
 
+  useEffect(() => {
+    try { localStorage.setItem(FACTS_KEY, JSON.stringify(facts)); } catch { /* ignore */ }
+  }, [facts]);
+
   async function handleScan() {
     setScanning(true);
     try {
@@ -129,10 +147,10 @@ export default function PeterLynch() {
   // ── LAYER 1 + LAYER 2 ────────────────────────────────────────────────────
   const ranked = useMemo(() => {
     return pool
-      .filter((st) => applyScreen(scoreLynch(st, overrides[stockSymbol(st)]).metrics, mode).pass)
-      .map((st) => scoreLynch(st, overrides[stockSymbol(st)]))
+      .filter((st) => applyScreen(scoreLynch(st, overrides[stockSymbol(st)], facts[stockSymbol(st)]).metrics, mode).pass)
+      .map((st) => scoreLynch(st, overrides[stockSymbol(st)], facts[stockSymbol(st)]))
       .sort((a, b) => b.total - a.total);
-  }, [pool, mode, overrides]);
+  }, [pool, mode, overrides, facts]);
 
   const rows = useMemo(() => {
     let out = ranked.filter((r) => {
@@ -181,6 +199,32 @@ export default function PeterLynch() {
   function resetStory(symbol) {
     setOverrides((prev) => { const next = { ...prev }; delete next[symbol]; return next; });
   }
+
+  // Manual lender facts — Gross/Net NPA, provision coverage, capital adequacy.
+  function setFact(symbol, key, value) {
+    setFacts((prev) => {
+      const next = { ...prev, [symbol]: { ...(prev[symbol] || {}) } };
+      const n = Number(value);
+      if (value === '' || value === null || !Number.isFinite(n) || n <= 0) delete next[symbol][key];
+      else next[symbol][key] = n;
+      if (Object.keys(next[symbol]).length === 0) delete next[symbol];
+      return next;
+    });
+  }
+
+  function resetFacts(symbol) {
+    setFacts((prev) => { const next = { ...prev }; delete next[symbol]; return next; });
+  }
+
+  // How many lenders sit in the pool but outside the current basket — so nobody has to guess
+  // why the ranking looks the way it does.
+  const lenderCounts = useMemo(() => {
+    const all = pool.map((st) => scoreLynch(st, overrides[stockSymbol(st)], facts[stockSymbol(st)]));
+    return {
+      lendersInPool: all.filter((r) => r.metrics.isLender).length,
+      lendersInRanking: ranked.filter((r) => r.metrics.isLender).length,
+    };
+  }, [pool, ranked, overrides, facts]);
 
   function downloadCsv() {
     const blob = new Blob([toCsv(rows)], { type: 'text/csv;charset=utf-8;' });
@@ -253,15 +297,16 @@ export default function PeterLynch() {
         </div>
 
         {/* ── LAYER 1 QUERIES ────────────────────────────────────────── */}
-        <div className="grid-2" style={{ marginBottom: 20 }}>
-          {['elite', 'hybrid'].map((id) => {
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 20, marginBottom: 20 }}>
+          {['elite', 'hybrid', 'financials'].map((id) => {
             const s = SCREEN_DEFS[id];
-            const count = pool.filter((st) => applyScreen(scoreLynch(st, overrides[stockSymbol(st)]).metrics, id).pass).length;
+            const count = pool.filter((st) => applyScreen(scoreLynch(st, overrides[stockSymbol(st)], facts[stockSymbol(st)]).metrics, id).pass).length;
+            const badgeTone = id === 'elite' ? 'badge-red' : id === 'financials' ? 'badge-blue' : 'badge-gold';
             return (
               <div className="card" key={id}>
                 <div className="lynch-card-head">
                   <div className="card-title" style={{ margin: 0 }}>{s.icon} {s.name}</div>
-                  <span className={`badge ${id === 'elite' ? 'badge-red' : 'badge-gold'}`}>{count} stocks</span>
+                  <span className={`badge ${badgeTone}`}>{count} stocks</span>
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 10 }}>{s.blurb}</div>
                 <pre className="lynch-query">{s.query}</pre>
@@ -284,9 +329,12 @@ export default function PeterLynch() {
             <strong style={{ color: 'var(--gold)' }}>Note on the queries:</strong> Screener.in has no
             “TTM Result Date” field — for current growth use <code>Profit growth &gt; 20</code> and
             <code> YOY Quarterly profit growth &gt; 20</code> (both are in the queries above).
-            The two baskets: <strong>🔥 Elite</strong> finds exceptional bargains (&gt;20% / PEG &lt;0.6),
-            <strong> ⭐ Lynch Hybrid</strong> gives the wider opportunity set (&gt;15% / PEG &lt;1).
-            Strict is for conviction, Hybrid is for ranking.
+            The baskets: <strong>🔥 Elite</strong> finds exceptional bargains (&gt;20% / PEG &lt;0.6),
+            <strong> ⭐ Lynch Hybrid</strong> gives the wider opportunity set (&gt;15% / PEG &lt;1),
+            and <strong>🏦 Banks &amp; NBFC</strong> exists because <em>no lender can ever satisfy
+            <code> Debt to equity &lt; 0.5</code></em> — borrowing is what a bank or an NBFC does for a
+            living. Elite and Hybrid judge a lender with the lender rubric too, so nothing is silently dropped.
+            <div style={{ marginTop: 6 }}>{LENDER_QUERY_NOTE}</div>
           </div>
         </div>
 
@@ -308,8 +356,8 @@ export default function PeterLynch() {
               </button>
             ))}
             <span style={{ flex: 1 }} />
-            <input className="input" style={{ maxWidth: 220 }} placeholder="Search symbol / sector..."
-              value={search} onChange={(e) => setSearch(e.target.value)} />
+            <ClearableInput style={{ maxWidth: 220 }} placeholder="Search symbol / sector..."
+              value={search} onChange={setSearch} matchCount={rows.length} totalCount={pool.length} />
             <input className="input" style={{ maxWidth: 140 }} type="number" placeholder="Min score"
               value={minScore} onChange={(e) => setMinScore(e.target.value)} />
             <select className="input" style={{ maxWidth: 170 }} value={sortKey} onChange={(e) => setSortKey(e.target.value)}>
@@ -327,6 +375,24 @@ export default function PeterLynch() {
             <div className="scan-banner warning" style={{ marginTop: 12 }}>
               No stock in the pool passes <strong>{screen.name}</strong> right now — switch to{' '}
               <em>Everything scanned</em> to see the full ranking, or run a fresh scan.
+            </div>
+          )}
+          {lenderCounts.lendersInPool > 0 && mode !== 'financials' && (
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 10 }}>
+              🏦 {lenderCounts.lendersInPool} bank{lenderCounts.lendersInPool === 1 ? '' : 's'}/NBFC
+              {lenderCounts.lendersInPool === 1 ? ' is' : ' are'} in the pool, judged on ROA and the
+              capital cushion rather than ROCE and Debt/Equity
+              {lenderCounts.lendersInRanking > 0
+                ? ` · ${lenderCounts.lendersInRanking} in this ranking`
+                : ' · none pass this basket'}
+              {' '}—{' '}
+              <button
+                className="btn btn-sm btn-outline"
+                style={{ padding: '1px 8px', fontSize: 11 }}
+                onClick={() => setMode('financials')}
+              >
+                🏦 Show Banks &amp; NBFC only
+              </button>
             </div>
           )}
           {stats.unverified.length > 0 && (
@@ -414,8 +480,11 @@ export default function PeterLynch() {
                                 row={r}
                                 mode={mode}
                                 override={overrides[r.symbol] || {}}
+                                facts={facts[r.symbol] || {}}
                                 onStory={setStory}
                                 onReset={resetStory}
+                                onFact={setFact}
+                                onResetFacts={resetFacts}
                               />
                             </td>
                           </tr>
@@ -497,8 +566,9 @@ export default function PeterLynch() {
 }
 
 // ── Per-stock score card + Story overrides (Layer 3) ────────────────────────
-function ScoreDetail({ row, mode, override, onStory, onReset }) {
+function ScoreDetail({ row, mode, override, facts, onStory, onReset, onFact, onResetFacts }) {
   const m = row.metrics;
+  const ld = m.lender || {};
   const screen = applyScreen(m, mode);
   const groups = [
     { key: 'growth', title: 'Growth', max: 40, data: row.growth },
@@ -507,25 +577,91 @@ function ScoreDetail({ row, mode, override, onStory, onReset }) {
     { key: 'story', title: 'Lynch Story', max: 20, data: row.story },
   ];
   const fmt = (v, suffix = '%') => (v === null || v === undefined ? '—' : `${v}${suffix}`);
+  const money = (v) => (v === null || v === undefined ? '—' : `₹${Math.round(v).toLocaleString('en-IN')}Cr`);
 
   return (
     <div className="lynch-detail">
-      <div className="lynch-detail-facts">
-        <span>Sales 3Y <b>{fmt(m.sales3y)}</b></span>
-        <span>Sales 5Y <b>{fmt(m.sales5y)}</b></span>
-        <span>Profit 3Y <b>{fmt(m.profit3y)}</b></span>
-        <span>Profit 5Y <b>{fmt(m.profit5y)}</b></span>
-        <span>Latest sales <b>{fmt(m.salesGrowth)}</b></span>
-        <span>Latest profit <b>{fmt(m.profitGrowth)}</b></span>
-        <span>PEG <b>{fmt(m.peg, '')}</b></span>
-        <span>PE <b>{fmt(m.pe, '')}</b></span>
-        <span>MCap <b>{m.mcap === null ? '—' : `₹${m.mcap.toLocaleString('en-IN')}Cr`}</b></span>
-        <span>ROCE <b>{fmt(m.roce)}</b> {srcTag(m.source.roce)}</span>
-        <span>ROE <b>{fmt(m.roe)}</b> {srcTag(m.source.roe)}</span>
-        <span>Debt/Equity <b>{m.deRatio === null ? '—' : m.deRatio.toFixed(2)}</b></span>
-        <span>Promoter <b>{fmt(m.promoter)}</b></span>
-        <span>Pledge <b>{m.pledged === null ? 'not in scan' : `${m.pledged}%`}</b> {srcTag(m.source.pledge)}</span>
-      </div>
+      {m.isLender ? (
+        // A lender is read off a different dashboard: ROA instead of ROCE, the capital cushion
+        // instead of D/E, and the asset-quality line. See src/lender.js.
+        <div className="lynch-detail-facts">
+          <span><b>🏦 {ld.kindLabel}</b></span>
+          <span>Sales 3Y <b>{fmt(m.sales3y)}</b></span>
+          <span>Sales 5Y <b>{fmt(m.sales5y)}</b></span>
+          <span>Profit 3Y <b>{fmt(m.profit3y)}</b></span>
+          <span>Profit 5Y <b>{fmt(m.profit5y)}</b></span>
+          <span>PEG <b>{fmt(m.peg, '')}</b></span>
+          <span>PE <b>{fmt(m.pe, '')}</b></span>
+          <span>MCap <b>{money(m.mcap)}</b></span>
+          <span>ROA <b>{fmt(ld.roa)}</b> {srcTag(ld.source?.roa)}</span>
+          <span>ROE <b>{fmt(ld.roe)}</b> {srcTag(ld.source?.roe)}</span>
+          <span>Net worth <b>{money(ld.netWorthCr)}</b></span>
+          <span>Total assets <b>{money(ld.totalAssetsCr)}</b></span>
+          <span>Deposits <b>{money(ld.depositsCr)}</b></span>
+          <span>Capital <b>{ld.capitalPct === null ? '—' : `${ld.capitalPct}% of assets`}</b></span>
+          <span>Leverage <b>{ld.fundingX === null ? '—' : `${ld.fundingX}× net worth`}</b></span>
+          <span>P/B <b>{fmt(ld.pb, '')}</b></span>
+          <span>Financing margin <b>{ld.financingMargin === null ? 'not in scan' : `${ld.financingMargin}%`}</b></span>
+          <span>GNPA <b>{ld.gnpa === null ? 'not in scan' : `${ld.gnpa}%`}</b></span>
+          <span>NNPA <b>{ld.nnpa === null ? 'not in scan' : `${ld.nnpa}%`}</b></span>
+          <span>CAR <b>{ld.car === null ? 'not in scan' : `${ld.car}%`}</b></span>
+          <span>Pledge <b>{m.pledged === null ? 'not in scan' : `${m.pledged}%`}</b></span>
+        </div>
+      ) : (
+        <div className="lynch-detail-facts">
+          <span>Sales 3Y <b>{fmt(m.sales3y)}</b></span>
+          <span>Sales 5Y <b>{fmt(m.sales5y)}</b></span>
+          <span>Profit 3Y <b>{fmt(m.profit3y)}</b></span>
+          <span>Profit 5Y <b>{fmt(m.profit5y)}</b></span>
+          <span>Latest sales <b>{fmt(m.salesGrowth)}</b></span>
+          <span>Latest profit <b>{fmt(m.profitGrowth)}</b></span>
+          <span>PEG <b>{fmt(m.peg, '')}</b></span>
+          <span>PE <b>{fmt(m.pe, '')}</b></span>
+          <span>MCap <b>{money(m.mcap)}</b></span>
+          <span>ROCE <b>{fmt(m.roce)}</b> {srcTag(m.source.roce)}</span>
+          <span>ROE <b>{fmt(m.roe)}</b> {srcTag(m.source.roe)}</span>
+          <span>Debt/Equity <b>{m.deRatio === null ? '—' : m.deRatio.toFixed(2)}</b></span>
+          <span>Promoter <b>{fmt(m.promoter)}</b></span>
+          <span>Pledge <b>{m.pledged === null ? 'not in scan' : `${m.pledged}%`}</b> {srcTag(m.source.pledge)}</span>
+        </div>
+      )}
+
+      {/* ── 🏦 ASSET QUALITY — the lender's real scorecard ────────────────────
+          Screener.in prints the Gross NPA, Net NPA and Capital Adequacy ROWS on a bank or NBFC
+          page but BLANKS THE VALUES behind a login, so they are not scraped and never guessed.
+          Type them from the quarterly result / investor presentation and the Quality bucket
+          updates on the spot: gross NPA alone is worth 4 of the 20 marks, the buffers 3 more. */}
+      {m.isLender && (
+        <div className="lynch-override" style={{ marginTop: 10, borderLeft: '3px solid var(--blue)' }}>
+          <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginBottom: 6 }}>
+            <strong style={{ color: 'var(--blue)' }}>🏦 Asset quality</strong> — Screener.in shows these
+            rows but hides the values, so nothing was invented: the NPA lines read “not in scan” and
+            score 0 until you enter them. A blank field means not-in-scan, never a real zero.
+          </div>
+          <div className="lynch-override-grid">
+            {[
+              { key: 'gnpa', label: 'Gross NPA %', hint: 'Slippages as a share of the book — the single most important number for a lender.' },
+              { key: 'nnpa', label: 'Net NPA %', hint: 'What is left after provisions — the loss the lender actually expects.' },
+              { key: 'pcr', label: 'Provision coverage %', hint: 'Cushion already set aside against bad loans.' },
+              { key: 'car', label: 'Capital adequacy %', hint: 'Regulatory capital. Below ~12% means a likely rights issue.' },
+            ].map((f) => (
+              <label key={f.key} title={f.hint}>
+                <span>{f.label}</span>
+                <input
+                  className="input"
+                  type="number" min="0" max="200" step="0.1"
+                  value={facts[f.key] !== undefined ? facts[f.key] : ''}
+                  placeholder={ld[f.key] !== null && ld[f.key] !== undefined ? String(ld[f.key]) : 'not in scan'}
+                  onChange={(e) => onFact(row.symbol, f.key, e.target.value)}
+                />
+              </label>
+            ))}
+          </div>
+          <button className="btn btn-sm btn-outline" style={{ marginTop: 8 }} onClick={() => onResetFacts(row.symbol)}>
+            ↺ Clear NPA entry
+          </button>
+        </div>
+      )}
 
       <div className="lynch-detail-grid">
         {groups.map((g) => (

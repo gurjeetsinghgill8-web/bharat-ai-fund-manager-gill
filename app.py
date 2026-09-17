@@ -20,6 +20,7 @@ from lynch_engine import (
     PEG_BANDS as LYNCH_PEG_BANDS,
     STORY_ITEMS as LYNCH_STORY_ITEMS,
     STEP_QUESTIONS as LYNCH_QUESTIONS,
+    LENDER_FACT_KEYS as LYNCH_LENDER_FACT_KEYS,
     rank_rows as lynch_rank_rows,
     rows_to_records as lynch_rows_to_records,
     rows_to_csv as lynch_rows_to_csv,
@@ -357,19 +358,28 @@ st.sidebar.subheader("Jarvis Option/Fund Core v2.0")
 # ------------------ TOP NAVIGATION SELECTBOX (ZERO SCROLLING) ------------------
 st.sidebar.markdown("---")
 st.sidebar.markdown("🧭 **Navigation**")
+# 🏆 PETER LYNCH FIRST — the 100-point system is the front page of the fund: it is the page
+# that answers "what do I research next?", so it is the landing page rather than page six.
 engine_page = st.sidebar.selectbox(
     "Select Dashboard Page",
     [
+        "🏆 Peter Lynch 100-Point System",
         "📊 Page 1: Portfolio Dashboard",
         "🔍 Page 2: GURJAS 1 Screener (Growth & DMA & PEG < 1.2)",
         "🎯 Page 3: GURJAS 2 Screener (MidCap & PEG < 1.5)",
-        "🏆 Page 6: Peter Lynch 100-Point System",
         "⚡ Page 4: Momentum & Breakout",
         "🏭 Page 5: Sectors & Industries"
     ],
     index=0,
     key="top_nav_selectbox"
 )
+
+# The Peter Lynch page was "Page 6" for a long time; accept the old label so a bookmarked or
+# cached session state does not land on a blank page after the move.
+LYNCH_PAGE_NAMES = {
+    "🏆 Peter Lynch 100-Point System",
+    "🏆 Page 6: Peter Lynch 100-Point System",
+}
 
 # ------------------ USER PROFILE SELECTOR ------------------
 st.sidebar.markdown("---")
@@ -947,7 +957,7 @@ if st.session_state["stock_cache"]:
     elif engine_page == "🎯 Page 3: GURJAS 2 Screener (MidCap & PEG < 1.5)":
         df, continuous, red_alerts = run_scoring_v3(st.session_state["stock_cache"])
         latest_highs = pd.DataFrame()
-    elif engine_page == "🏆 Page 6: Peter Lynch 100-Point System":
+    elif engine_page in LYNCH_PAGE_NAMES:
         # Layer 1 filters and the 100-point ranking run inside lynch_engine on the full scored universe.
         df, latest_highs, continuous, red_alerts = run_scoring(st.session_state["stock_cache"])
     elif engine_page == "⚡ Page 4: Momentum & Breakout":
@@ -2009,7 +2019,7 @@ else:
                     else:
                         st.error("Report generation failed. Check server logs.")
 
-    elif engine_page == "🏆 Page 6: Peter Lynch 100-Point System":
+    elif engine_page in LYNCH_PAGE_NAMES:
         # ══════════════════════════════════════════════════════════════════
         # DR GILL — PETER LYNCH 100-POINT SYSTEM
         #   Layer 1 : machine filter  (Elite / Lynch Hybrid queries)
@@ -2020,34 +2030,84 @@ else:
         st.title("🏆 DR GILL — PETER LYNCH 100-POINT SYSTEM")
         st.markdown("### Screener → 100-point score → Top 5 → deep research")
         st.caption(
+            "This is the fund's front page: it answers *what do I research next?* "
+            "The **📊 Portfolio Dashboard** is the next item in the sidebar."
+        )
+        st.caption(
             "**Growth /40 · Valuation /20 · Quality /20 · Lynch Story /20.** "
             "Layer 1 filters the universe, Layer 2 ranks it, Layer 3 is your own reading of the annual report. "
             "Every mark is labelled **exact** (from the scan), **estimate** (derived), **n/a** (not in scan — scores 0, never invented) or **manual** (your override)."
+        )
+        st.caption(
+            "**🏦 Banks & NBFC** are scored on ROA, their capital cushion and NPA — never on ROCE or "
+            "Debt/Equity, because borrowing is what a lender does for a living. The Elite and Hybrid "
+            "baskets judge a lender with the lender rubric too, so no bank or NBFC can be silently "
+            "missed again."
         )
 
         if df.empty:
             st.warning("No stock data available. Run a 'System Scan' from the left control panel first.")
         else:
+            # ── DURABLE, SYMBOL-KEYED STORES FOR EVERYTHING THE USER TYPES ────────────
+            # Streamlit's widget keys are scratch space: it garbage-collects the state of any
+            # widget that stops rendering. Every box on this page is keyed by the SELECTED stock,
+            # so the moment you click a different name, the previous stock's widget state is
+            # dropped — which silently threw away the Story marks and NPA numbers you had just
+            # typed for it. A plain dict is not widget state, so it survives. Widgets write
+            # through on change and read back from here on render.
+            st.session_state.setdefault("lynch_story_store", {})
+            st.session_state.setdefault("lynch_facts_store", {})
+
+            def _lynch_remember_story(sym, item, widget_key):
+                val = st.session_state.get(widget_key)
+                if val is None:
+                    return
+                st.session_state["lynch_story_store"].setdefault(sym, {})[item] = float(val)
+
+            def _lynch_remember_fact(sym, item, widget_key):
+                val = st.session_state.get(widget_key)
+                if val is None:
+                    return
+                bucket = st.session_state["lynch_facts_store"].setdefault(sym, {})
+                if float(val) > 0:
+                    bucket[item] = float(val)
+                else:
+                    bucket.pop(item, None)
+
             # ── Session-state overrides for the Story bucket (Layer 3) ──
             def _lynch_collect_overrides(auto_rows):
                 """Story marks typed by the user — only kept when they differ from the auto value."""
                 auto_map = {r["symbol"]: r["story"]["auto"] for r in auto_rows}
                 collected = {}
-                for key, val in list(st.session_state.items()):
-                    if not (isinstance(key, str) and key.startswith("lynch_story__")):
-                        continue
-                    try:
-                        _, sym, item = key.split("__", 2)
-                    except ValueError:
-                        continue
-                    auto_val = auto_map.get(sym, {}).get(item)
-                    try:
-                        if auto_val is not None and abs(float(val) - float(auto_val)) < 1e-9:
-                            continue          # untouched → not an override
-                    except (TypeError, ValueError):
-                        continue
-                    collected.setdefault(sym, {})[item] = float(val)
+                for sym, marks in st.session_state["lynch_story_store"].items():
+                    auto = auto_map.get(sym, {})
+                    for item, val in marks.items():
+                        auto_val = auto.get(item)
+                        try:
+                            if auto_val is not None and abs(float(val) - float(auto_val)) < 1e-9:
+                                continue          # untouched → not an override
+                        except (TypeError, ValueError):
+                            continue
+                        collected.setdefault(sym, {})[item] = float(val)
                 return collected
+
+            def _lynch_collect_lender_facts():
+                """Manual Gross/Net NPA, PCR and CAR keyed by symbol.
+
+                Screener.in blanks the NPA values behind a login, so these cannot be scraped. A
+                typed 0 means "not entered" (st.number_input has no empty state) and is dropped,
+                so an untouched box stays "not in scan" instead of becoming a real zero that
+                would silently pass a `GNPA < 3%` test.
+                """
+                return {
+                    sym: {k: v for k, v in marks.items() if k in LYNCH_LENDER_FACT_KEYS and v > 0}
+                    for sym, marks in st.session_state["lynch_facts_store"].items()
+                }
+
+            def _lynch_remember_screen():
+                """Reset the open stock when the basket or filters change, so the card never shows
+                a stock that is no longer in the ranking."""
+                st.session_state.pop("lynch_open_symbol", None)
 
             # ── Layer-1 selector + controls ──
             ctrl1, ctrl2, ctrl3, ctrl4, ctrl5 = st.columns([2, 1, 1.4, 1.2, 1.4])
@@ -2058,23 +2118,27 @@ else:
                     index=1,
                     horizontal=True,
                     key="lynch_screen_radio",
+                    on_change=_lynch_remember_screen,
                 )
             screen_id = next(k for k, s in LYNCH_SCREENS.items() if f"{s['icon']} {s['name']}" == screen_label)
             with ctrl2:
-                top_only = st.checkbox("Top 5 only", value=True, key="lynch_top5_only")
+                top_only = st.checkbox("Top 5 only", value=True, key="lynch_top5_only",
+                                       on_change=_lynch_remember_screen)
             with ctrl3:
                 lynch_search = st.text_input("Search symbol / sector / industry", value="", key="lynch_search")
             with ctrl4:
-                lynch_min = st.number_input("Min score", min_value=0, max_value=100, value=0, step=5, key="lynch_min_score")
+                lynch_min = st.number_input("Min score", min_value=0, max_value=100, value=0, step=5,
+                                            key="lynch_min_score", on_change=_lynch_remember_screen)
             with ctrl5:
                 lynch_sort = st.selectbox(
                     "Sort by",
                     ["Total score", "Quality /20", "Lowest PEG", "Market cap", "Symbol A–Z"],
                     key="lynch_sort",
+                    on_change=_lynch_remember_screen,
                 )
 
-            # ── The two Screener.in baskets (copy button is on the code block) ──
-            with st.expander("🔥 Layer 1 — the two Screener.in queries (copy & paste)", expanded=(screen_id != "all")):
+            # ── The Screener.in baskets (copy button is on the code block) ──
+            with st.expander("🔥 Layer 1 — the Screener.in queries (copy & paste)", expanded=(screen_id != "all")):
                 q_elite, q_hybrid = st.columns(2)
                 with q_elite:
                     st.markdown(f"**{LYNCH_SCREENS['elite']['icon']} {LYNCH_SCREENS['elite']['name']}** — {LYNCH_SCREENS['elite']['blurb']}")
@@ -2082,16 +2146,26 @@ else:
                 with q_hybrid:
                     st.markdown(f"**{LYNCH_SCREENS['hybrid']['icon']} {LYNCH_SCREENS['hybrid']['name']}** — {LYNCH_SCREENS['hybrid']['blurb']}")
                     st.code(LYNCH_SCREENS["hybrid"]["query"], language="text")
+                st.markdown(
+                    f"**{LYNCH_SCREENS['financials']['icon']} {LYNCH_SCREENS['financials']['name']}** — "
+                    f"{LYNCH_SCREENS['financials']['blurb']}"
+                )
+                st.code(LYNCH_SCREENS["financials"]["query"], language="text")
+                st.caption(LYNCH_SCREENS["financials"].get("note", ""))
                 st.caption(
                     "Screener.in has no “TTM Result Date” field — for current growth use `Profit growth` and "
-                    "`YOY Quarterly profit growth`. Strict is for conviction, Hybrid is for ranking."
+                    "`YOY Quarterly profit growth`. Strict is for conviction, Hybrid is for ranking, and "
+                    "Banks & NBFC exists because **no lender can ever satisfy `Debt to equity < 0.5`** — "
+                    "borrowing is what a bank or an NBFC does for a living."
                 )
 
             # ── LAYER 2: score the universe ──
             lynch_records = df.to_dict("records")
             lynch_auto_rows = lynch_rank_rows(lynch_records, {}, screen_id)
             lynch_overrides = _lynch_collect_overrides(lynch_auto_rows)
-            lynch_rows = lynch_rank_rows(lynch_records, lynch_overrides, screen_id)
+            # Manual NPA / PCR / CAR typed on the score card — the lender's asset-quality lens.
+            lynch_facts = _lynch_collect_lender_facts()
+            lynch_rows = lynch_rank_rows(lynch_records, lynch_overrides, screen_id, lynch_facts)
 
             pool_size = len(lynch_records)
             pass_count = len(lynch_rows)
@@ -2168,33 +2242,135 @@ else:
                 # ── Score card for any ranked stock ──
                 st.markdown("---")
                 st.subheader("🔬 Score card — every mark, and your Layer-3 overrides")
-                lynch_options = [f"{r['symbol']} — {r['total']}/100 ({r['grade']})" for r in view_rows]
-                picked = st.selectbox("Select a stock", lynch_options, key="lynch_scorecard_pick")
-                picked_sym = picked.split(" — ")[0]
-                row = next(r for r in view_rows if r["symbol"] == picked_sym)
+
+                # ── STOCK PICKER ────────────────────────────────────────────────
+                # This used to be a single selectbox whose options read
+                # "KUKURAGRO — 100/100 (A+)". Searching meant typing into that box and then
+                # deleting the "— 100/100 (A+)" tail, and once an option was chosen the whole
+                # label sat in the box again. So: a plain EMPTY search box (starts blank every
+                # time, one click on ✕ clears it) plus a shortlist of matching names to pick
+                # from. Type "chol" and click CHOLAFIN. Nothing to delete, nothing to copy.
+                pick_a, pick_b = st.columns([3, 1])
+                with pick_a:
+                    lynch_pick_query = st.text_input(
+                        "🔎 Find a stock — type part of the symbol, sector or industry",
+                        value="",
+                        placeholder="e.g. CHOLA, Muthoot, Housing Finance, Banks",
+                        key="lynch_pick_query",
+                        help="Blank = the top-ranked stock. The box always starts empty, so there is "
+                             "never anything to clear before typing.",
+                    ).strip()
+                with pick_b:
+                    st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
+                    if st.button("✕ Clear", key="lynch_pick_clear", use_container_width=True):
+                        st.session_state["lynch_pick_query"] = ""
+                        st.session_state.pop("lynch_open_symbol", None)
+                        st.rerun()
+
+                # Ranked names only — `view_rows` is already sorted by the current sort key.
+                if lynch_pick_query:
+                    needle = lynch_pick_query.lower()
+                    pick_pool = [
+                        r for r in view_rows
+                        if needle in r["symbol"].lower()
+                        or needle in str(r["sector"]).lower()
+                        or needle in str(r["industry"]).lower()
+                    ]
+                else:
+                    pick_pool = list(view_rows)
+
+                if not pick_pool:
+                    st.warning(
+                        f"No ranked stock matches **{lynch_pick_query}**. Note this list only "
+                        "contains stocks that PASS the current Layer-1 basket — switch to "
+                        "📚 Everything scanned to search the whole scan."
+                    )
+                    row = view_rows[0]
+                else:
+                    # The choice lives in session_state under a FIXED key and the shortlist is
+                    # rendered as plain buttons, one per symbol. A widget keyed by the search
+                    # text (the obvious first attempt) is worse than it looks: every keystroke
+                    # mints a new widget and orphans the previous one's state, so the choice and
+                    # the score card can fall out of step. Buttons carry no state and their keys
+                    # are derived from the symbol, so nothing churns.
+                    symbols = {r["symbol"] for r in pick_pool}
+                    open_sym = st.session_state.get("lynch_open_symbol") or ""
+                    if open_sym not in symbols:
+                        open_sym = pick_pool[0]["symbol"]
+                        st.session_state["lynch_open_symbol"] = open_sym
+                    row = next(r for r in pick_pool if r["symbol"] == open_sym)
+
+                    if len(pick_pool) == 1:
+                        st.caption(f"Showing **{row['symbol']}** — {row['total']}/100 ({row['grade']})")
+                    else:
+                        if len(pick_pool) > 40:
+                            st.caption(f"**{len(pick_pool)}** matches — the 40 best are below. "
+                                       "Type more letters to narrow it down.")
+                        st.caption("Click a name to open its score card:")
+                        btn_cols = st.columns(4)
+                        for _i, _r in enumerate(pick_pool[:40]):
+                            _is_open = _r["symbol"] == row["symbol"]
+                            _tag = "🏦 " if _r["metrics"].get("isLender") else ""
+                            with btn_cols[_i % 4]:
+                                if st.button(
+                                    f"{'▶ ' if _is_open else ''}{_tag}{_r['symbol']} · "
+                                    f"{_r['total']:.0f}/100 {_r['grade']}",
+                                    key=f"lynch_open__{_r['symbol']}",
+                                    type="primary" if _is_open else "secondary",
+                                    use_container_width=True,
+                                ):
+                                    st.session_state["lynch_open_symbol"] = _r["symbol"]
+                                    st.rerun()
+
+                picked_sym = row["symbol"]
                 m = row["metrics"]
+                ld = m.get("lender") or {}
 
                 if row["warnings"]:
                     st.markdown(
                         "<div style='background: rgba(255,159,67,0.12); border-left: 5px solid #FF9F43; padding: 10px 14px; border-radius: 6px; margin-bottom: 12px;'><b>⚠️ Watch-outs:</b> "
                         + " · ".join(row["warnings"]) + "</div>", unsafe_allow_html=True)
 
-                fact_line = " &nbsp;|&nbsp; ".join([
-                    f"Sales 3Y <b>{m['sales3y'] if m['sales3y'] is not None else '—'}%</b>",
-                    f"Sales 5Y <b>{m['sales5y'] if m['sales5y'] is not None else '—'}%</b>",
-                    f"Profit 3Y <b>{m['profit3y'] if m['profit3y'] is not None else '—'}%</b>",
-                    f"Profit 5Y <b>{m['profit5y'] if m['profit5y'] is not None else '—'}%</b>",
-                    f"Latest sales <b>{m['salesGrowth'] if m['salesGrowth'] is not None else '—'}%</b>",
-                    f"Latest profit <b>{m['profitGrowth'] if m['profitGrowth'] is not None else '—'}%</b>",
-                    f"PEG <b>{m['peg'] if m['peg'] is not None else '—'}</b>",
-                    f"PE <b>{m['pe'] if m['pe'] is not None else '—'}</b>",
-                    f"MCap <b>₹{round(m['mcap']):,}Cr</b>" if m["mcap"] is not None else "MCap <b>—</b>",
-                    f"ROCE <b>{m['roce'] if m['roce'] is not None else '—'}%</b> <i>({m['source']['roce']})</i>",
-                    f"ROE <b>{m['roe'] if m['roe'] is not None else '—'}%</b> <i>({m['source']['roe']})</i>",
-                    f"D/E <b>{round(m['deRatio'], 2) if m['deRatio'] is not None else '—'}</b>",
-                    f"Promoter <b>{m['promoter'] if m['promoter'] is not None else '—'}%</b>",
-                    f"Pledge <b>{m['pledged'] if m['pledged'] is not None else 'not in scan'}</b>",
-                ])
+                if m.get("isLender"):
+                    # A lender is read off a different dashboard: ROA instead of ROCE, the
+                    # capital cushion instead of D/E, plus the asset-quality line.
+                    fact_line = " &nbsp;|&nbsp; ".join([
+                        f"<b>{ld['kindLabel']}</b>",
+                        f"Sales 3Y <b>{m['sales3y'] if m['sales3y'] is not None else '—'}%</b>",
+                        f"Profit 3Y <b>{m['profit3y'] if m['profit3y'] is not None else '—'}%</b>",
+                        f"PEG <b>{m['peg'] if m['peg'] is not None else '—'}</b>",
+                        f"PE <b>{m['pe'] if m['pe'] is not None else '—'}</b>",
+                        f"MCap <b>₹{round(m['mcap']):,}Cr</b>" if m["mcap"] is not None else "MCap <b>—</b>",
+                        f"ROA <b>{ld['roa'] if ld['roa'] is not None else '—'}%</b> <i>({ld['source']['roa']})</i>",
+                        f"ROE <b>{ld['roe'] if ld['roe'] is not None else '—'}%</b> <i>({ld['source']['roe']})</i>",
+                        f"Net worth <b>₹{round(ld['netWorthCr']):,}Cr</b>" if ld["netWorthCr"] is not None else "Net worth <b>—</b>",
+                        f"Assets <b>₹{round(ld['totalAssetsCr']):,}Cr</b>" if ld["totalAssetsCr"] is not None else "Assets <b>—</b>",
+                        f"Capital <b>{ld['capitalPct'] if ld['capitalPct'] is not None else '—'}% of assets</b>",
+                        f"Leverage <b>{ld['fundingX'] if ld['fundingX'] is not None else '—'}× net worth</b>",
+                        f"P/B <b>{ld['pb'] if ld['pb'] is not None else '—'}</b>",
+                        f"Financing margin <b>{ld['financingMargin'] if ld['financingMargin'] is not None else 'not in scan'}</b>",
+                        f"GNPA <b>{ld['gnpa'] if ld['gnpa'] is not None else 'not in scan'}</b>",
+                        f"NNPA <b>{ld['nnpa'] if ld['nnpa'] is not None else 'not in scan'}</b>",
+                        f"CAR <b>{ld['car'] if ld['car'] is not None else 'not in scan'}</b>",
+                        f"Pledge <b>{m['pledged'] if m['pledged'] is not None else 'not in scan'}</b>",
+                    ])
+                else:
+                    fact_line = " &nbsp;|&nbsp; ".join([
+                        f"Sales 3Y <b>{m['sales3y'] if m['sales3y'] is not None else '—'}%</b>",
+                        f"Sales 5Y <b>{m['sales5y'] if m['sales5y'] is not None else '—'}%</b>",
+                        f"Profit 3Y <b>{m['profit3y'] if m['profit3y'] is not None else '—'}%</b>",
+                        f"Profit 5Y <b>{m['profit5y'] if m['profit5y'] is not None else '—'}%</b>",
+                        f"Latest sales <b>{m['salesGrowth'] if m['salesGrowth'] is not None else '—'}%</b>",
+                        f"Latest profit <b>{m['profitGrowth'] if m['profitGrowth'] is not None else '—'}%</b>",
+                        f"PEG <b>{m['peg'] if m['peg'] is not None else '—'}</b>",
+                        f"PE <b>{m['pe'] if m['pe'] is not None else '—'}</b>",
+                        f"MCap <b>₹{round(m['mcap']):,}Cr</b>" if m["mcap"] is not None else "MCap <b>—</b>",
+                        f"ROCE <b>{m['roce'] if m['roce'] is not None else '—'}%</b> <i>({m['source']['roce']})</i>",
+                        f"ROE <b>{m['roe'] if m['roe'] is not None else '—'}%</b> <i>({m['source']['roe']})</i>",
+                        f"D/E <b>{round(m['deRatio'], 2) if m['deRatio'] is not None else '—'}</b>",
+                        f"Promoter <b>{m['promoter'] if m['promoter'] is not None else '—'}%</b>",
+                        f"Pledge <b>{m['pledged'] if m['pledged'] is not None else 'not in scan'}</b>",
+                    ])
                 st.markdown(f"<div style='font-size: 13px; color: #555; margin-bottom: 14px;'>{fact_line}</div>", unsafe_allow_html=True)
 
                 sc1, sc2, sc3, sc4 = st.columns(4)
@@ -2215,6 +2391,52 @@ else:
                 _render_bucket(sc3, "QUALITY", row["quality"])
                 _render_bucket(sc4, "LYNCH STORY", row["story"])
 
+                # ── NPA / CAR entry — the lender's real scorecard ────────────────
+                # Screener.in prints the Gross NPA, Net NPA and Capital Adequacy ROWS on a bank
+                # or NBFC page but blanks the VALUES behind a login, so we do not scrape them.
+                # Type them in from the quarterly result / investor presentation and the Quality
+                # bucket fills in immediately — gross NPA alone is worth 4 of the 20 marks, and
+                # the two buffer lines 3 more.
+                if m.get("isLender"):
+                    with st.expander("🏦 Asset quality — type the NPA numbers (Screener.in blanks them)", expanded=True):
+                        st.caption(
+                            f"**{row['symbol']}** is scored as a **{ld['kindLabel']}**. Screener.in shows the "
+                            "Gross NPA / Net NPA / CAR rows but hides the values, so nothing was invented: these "
+                            "lines score 0 and read “not in scan” until you enter them. Get them from the latest "
+                            "quarterly result or investor presentation."
+                        )
+                        ncols = st.columns(4)
+                        _npa_specs = [
+                            ("gnpa", "Gross NPA %", 3.0, "Slippages as a share of the book. The single most important number for a lender."),
+                            ("nnpa", "Net NPA %", 1.5, "What is left after provisions — the loss the lender actually expects."),
+                            ("pcr", "Provision coverage %", 70.0, "Cushion already set aside against bad loans."),
+                            ("car", "Capital adequacy %", 15.0, "Regulatory capital. Below ~12% means a likely rights issue."),
+                        ]
+                        for _i, (_key, _label, _thresh, _help) in enumerate(_npa_specs):
+                            with ncols[_i]:
+                                _fkey = f"lynch_fact__{row['symbol']}__{_key}"
+                                st.number_input(
+                                    _label,
+                                    min_value=0.0, max_value=200.0, step=0.1,
+                                    value=float(st.session_state["lynch_facts_store"]
+                                                .get(row["symbol"], {}).get(_key, 0.0)),
+                                    key=_fkey,
+                                    on_change=_lynch_remember_fact,
+                                    args=(row["symbol"], _key, _fkey),
+                                    help=_help,
+                                )
+                        st.caption("A value of 0 means “not entered” — it will be treated as not-in-scan, not as a real zero.")
+                        _stored = st.session_state["lynch_facts_store"].get(row["symbol"], {})
+                        if _stored:
+                            st.caption("💾 Saved for **" + row["symbol"] + "**: "
+                                       + " · ".join(f"{_k} {_v}" for _k, _v in sorted(_stored.items()))
+                                       + " — kept even when you open another stock.")
+                        if st.button(f"↺ Clear {row['symbol']}'s NPA entry", key=f"lynch_fact_reset_{row['symbol']}"):
+                            st.session_state["lynch_facts_store"].pop(row["symbol"], None)
+                            for _f in LYNCH_LENDER_FACT_KEYS:
+                                st.session_state.pop(f"lynch_fact__{row['symbol']}__{_f}", None)
+                            st.rerun()
+
                 # Layer-3 story overrides
                 with st.expander("✍️ Layer 3 — override the Story bucket with your own judgement", expanded=False):
                     st.caption(
@@ -2224,13 +2446,19 @@ else:
                     ocols = st.columns(3)
                     for idx, item in enumerate(LYNCH_STORY_ITEMS):
                         with ocols[idx % 3]:
+                            _skey = f"lynch_story__{row['symbol']}__{item['key']}"
                             st.number_input(
                                 f"{item['label']} (auto {row['story']['auto'][item['key']]})",
                                 min_value=0.0, max_value=float(item["max"]), step=0.5,
-                                value=float(row["story"]["auto"][item["key"]]),
-                                key=f"lynch_story__{row['symbol']}__{item['key']}",
+                                value=float(st.session_state["lynch_story_store"]
+                                            .get(row["symbol"], {})
+                                            .get(item["key"], row["story"]["auto"][item["key"]])),
+                                key=_skey,
+                                on_change=_lynch_remember_story,
+                                args=(row["symbol"], item["key"], _skey),
                             )
                     if st.button("↺ Reset this stock's Story marks to auto", key=f"lynch_reset_{row['symbol']}"):
+                        st.session_state["lynch_story_store"].pop(row["symbol"], None)
                         for item in LYNCH_STORY_ITEMS:
                             st.session_state.pop(f"lynch_story__{row['symbol']}__{item['key']}", None)
                         st.rerun()

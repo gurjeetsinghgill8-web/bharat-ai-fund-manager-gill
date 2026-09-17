@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import { getScanStatus, triggerScan } from '../api';
 import api from '../api';
+import ClearableInput from '../components/ClearableInput';
 
 export default function Momentum() {
   const [stocks, setStocks]     = useState([]);
@@ -75,16 +76,21 @@ export default function Momentum() {
     else { setSortKey(key); setSortDir('desc'); }
   }
 
-  const filtered = stocks
-    .filter(s => {
-      const sym = (s.symbol || s.ticker || s.Symbol || s.Ticker || '').toUpperCase();
-      const aboveDma = getCol(s, ['above_200dma', 'above_sma', 'price_above_dma', 'Is Above 200 SMA']);
-      if (filter === 'above_dma' && !aboveDma) return false;
-      if (filter === 'gurjas1' && !s.in_gurjas1) return false;
-      if (filter === 'gurjas2' && !s.in_gurjas2) return false;
-      if (filter === 'both' && (!s.in_gurjas1 || !s.in_gurjas2)) return false;
-      return sym.includes(search.toUpperCase());
-    })
+  // The chip row and the search box answer two different questions, so keep them separate: the
+  // chip picks the working set, the search box narrows it. `chipFiltered` is what the ClearableInput
+  // counts against, so its "No match in N rows" hint can never be blamed on a chip that is simply
+  // switched on — the hint is only ever about the text you typed.
+  const chipFiltered = stocks.filter(s => {
+    const aboveDma = getCol(s, ['above_200dma', 'above_sma', 'price_above_dma', 'Is Above 200 SMA']);
+    if (filter === 'above_dma' && !aboveDma) return false;
+    if (filter === 'gurjas1' && !s.in_gurjas1) return false;
+    if (filter === 'gurjas2' && !s.in_gurjas2) return false;
+    if (filter === 'both' && (!s.in_gurjas1 || !s.in_gurjas2)) return false;
+    return true;
+  });
+
+  const filtered = chipFiltered
+    .filter(s => (s.symbol || s.ticker || s.Symbol || s.Ticker || '').toUpperCase().includes(search.toUpperCase()))
     .sort((a, b) => {
       const getVal = (s) => {
         if (sortKey === 'momentum_score') {
@@ -173,8 +179,8 @@ export default function Momentum() {
               {f.label}
             </button>
           ))}
-          <input className="input" style={{ maxWidth: 200 }} placeholder="Search..."
-            value={search} onChange={e => setSearch(e.target.value)} />
+          <ClearableInput style={{ maxWidth: 200 }} placeholder="Search..."
+            value={search} onChange={setSearch} matchCount={filtered.length} totalCount={chipFiltered.length} />
         </div>
 
         <div className="card">

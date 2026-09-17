@@ -95,13 +95,22 @@ def _save_cache(symbol, data):
         print(f"screener_cache: write error for {symbol}: {e}")
 
 
-def _load_cache(symbol):
-    """Load cached data if fresh, else return None."""
+def _load_cache(symbol, require_balance_sheet=False):
+    """Load cached data if fresh, else return None.
+
+    `require_balance_sheet` re-fetches a cache written before `cache_version` 2, which is what
+    a bank / NBFC needs (that version added Equity Capital, Reserves, Deposits, Borrowing and
+    Total Assets). data_fetcher asks for it only for records it classifies as lenders, so
+    upgrading does not force a 1,682-stock refetch.
+    """
     cache_path = _get_cache_path(symbol)
     if _is_cache_fresh(cache_path):
         try:
             with open(cache_path, "r") as f:
-                return json.load(f)
+                cached = json.load(f)
+            if require_balance_sheet and cached.get("cache_version", 1) < 2:
+                return None
+            return cached
         except Exception:
             pass
     return None
@@ -142,14 +151,131 @@ def _parse_crores_to_absolute(value_in_crores):
     return value_in_crores * 10_000_000
 
 
-def fetch_screener_data(ticker, force_refresh=False):
+def _parse_pct(text):
+    """'23%' → 23.0, '-16%' → -16.0, '' / '-' → None (a real 0% is preserved)."""
+    if text is None:
+        return None
+    s = str(text).strip().replace(",", "").replace("₹", "")
+    if s in ("", "-", "--", "N/A"):
+        return None
+    s = s.rstrip("%").strip()
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
+
+def _row_label(text):
+    """Normalise a Screener.in row label: 'Revenue +' → 'revenue', 'Total Assets' → 'total assets'.
+
+    Screener.in appends a '+' to the first row of each block and pads labels with
+    non-breaking spaces, so matching on the raw string is brittle.
+    """
+    s = str(text or "").replace("\u00a0", " ").replace("+", " ")
+    return re.sub(r"\s+", " ", s).strip().lower()
+
+
+def _last_value(cells):
+    """The right-most non-empty cell — Screener.in prints oldest → latest, left → right."""
+    for c in reversed(cells):
+        if c is not None and str(c).strip() not in ("", "-", "--"):
+            return c
+    return None
+
+
+def _extract_balance_sheet_block(soup):
+    """
+    Pull the latest balance-sheet figures off a screener.in company page.
+
+    Why this matters for lenders: a bank/NBFC is not judged on ROCE or Debt/Equity < 0.5 — it
+    is judged on return on assets, the capital cushion (net worth ÷ total assets) and asset
+    quality. yfinance gives us none of that for an Indian lender, but screener.in prints the
+    full balance sheet (Equity Capital, Reserves, Deposits, Borrowing, Total Assets) and the
+    P&L "Financing Margin %" FOR FREE, without a login.
+
+    Bonus for everybody else: `net_worth_cr` = Equity Capital + Reserves is the REAL
+    shareholder equity. The yfinance "Reserves" field that lynch_engine previously used as an
+    equity proxy is actually *retained earnings*, which understates equity for every company
+    that has issued share capital — so ROE estimates get better here too, not just for banks.
+
+    Gross NPA % / Net NPA % / Capital Adequacy Ratio also appear as ROWS on a lender page, but
+    Screener.in BLANKS THEIR VALUES behind a login wall — so they are deliberately NOT scraped.
+    We never guess an NPA; the score card takes it as a manual entry instead.
+
+    Returns None when the page carries no balance-sheet rows at all.
+    """
+    # ── P&L side: Financing Margin % (the lender's margin / NIM proxy) ──
+    financing_margin = None
+    financing_profit_cr = None
+    for sec in soup.find_all("section"):
+        h2 = sec.find("h2")
+        if not h2 or "Profit" not in h2.get_text(strip=True):
+            continue
+        table = sec.find("table")
+        if table is None:
+            continue
+        for row in table.find_all("tr"):
+            cells = [c.get_text(" ", strip=True) for c in row.find_all(["th", "td"])]
+            if len(cells) < 2:
+                continue
+            label = _row_label(cells[0])
+            if label == "financing margin %":
+                financing_margin = _parse_pct(_last_value(cells[1:]))
+            elif label == "financing profit":
+                financing_profit_cr = _parse_indian_number(_last_value(cells[1:]) or "")
+        break
+
+    # ── Balance sheet side ──
+    bs = {}
+    for sec in soup.find_all("section"):
+        h2 = sec.find("h2")
+        if not h2 or "Balance Sheet" not in h2.get_text(strip=True):
+            continue
+        table = sec.find("table")
+        if table is None:
+            continue
+        for row in table.find_all("tr"):
+            cells = [c.get_text(" ", strip=True) for c in row.find_all(["th", "td"])]
+            if len(cells) < 2:
+                continue
+            label = _row_label(cells[0])
+            raw = _last_value(cells[1:])
+            if label in ("equity capital", "reserves", "deposits", "borrowing", "borrowings",
+                         "total assets", "total liabilities"):
+                bs[label] = _parse_indian_number(raw) if raw is not None else 0.0
+        break
+
+    equity_capital = bs.get("equity capital")
+    reserves = bs.get("reserves")
+    if equity_capital is None and reserves is None:
+        return None                      # no balance sheet on the page
+
+    net_worth = (equity_capital or 0.0) + (reserves or 0.0)
+
+    return {
+        "net_worth_cr": round(net_worth, 2) if net_worth else None,
+        "equity_capital_cr": equity_capital,
+        "reserves_cr": reserves,
+        "borrowings_cr": bs.get("borrowing", bs.get("borrowings")),
+        "deposits_cr": bs.get("deposits"),
+        "total_assets_cr": bs.get("total assets"),
+        "total_liabilities_cr": bs.get("total liabilities"),
+        "financing_margin_pct": financing_margin,
+        "financing_profit_cr": financing_profit_cr,
+    }
+
+
+def fetch_screener_data(ticker, force_refresh=False, require_balance_sheet=False):
     """
     Fetch 10+ years of Sales & Net Profit from screener.in
-    
+
     Args:
         ticker: str — "AUROPHARMA.NS" or "AUROPHARMA"
         force_refresh: bool — bypass cache if True
-    
+        require_balance_sheet: bool — ignore a cache written before `cache_version` 2 (no
+            Equity Capital / Reserves / Deposits / Borrowing / Total Assets). Pass True for
+            banks & NBFCs, whose scoring needs the balance sheet.
+
     Returns:
         dict with keys:
             - "sales": list of annual sales values (absolute, latest first), or []
@@ -157,6 +283,8 @@ def fetch_screener_data(ticker, force_refresh=False):
             - "years": list of year labels (latest first), or []
             - "source": str — "screener.in" or "yfinance_fallback"
             - "success": bool
+            - "balance_sheet": dict of ₹ Cr figures (or None), incl. "net_worth_cr" and
+              "financing_margin_pct"
     
     Usage:
         result = fetch_screener_data("AUROPHARMA.NS")
@@ -170,7 +298,7 @@ def fetch_screener_data(ticker, force_refresh=False):
     
     # Check cache first
     if not force_refresh:
-        cached = _load_cache(symbol)
+        cached = _load_cache(symbol, require_balance_sheet=require_balance_sheet)
         if cached is not None:
             return cached
     
@@ -285,6 +413,26 @@ def fetch_screener_data(ticker, force_refresh=False):
         
         sales_raw = _trim_trailing_empty(sales_raw)
         profit_raw = _trim_trailing_empty(profit_raw)
+
+        # ── DROP NON-FISCAL-YEAR COLUMNS (the "TTM" column) ─────────────────────
+        # Once a new quarter is published, Screener.in prepends a rolling-twelve-month "TTM"
+        # column: [TTM, Mar 2026, Mar 2025, ...]. A TTM figure is NOT a fiscal year, so leaving
+        # it in the series shifts every CAGR window forward by one year AND turns the latest
+        # growth into TTM ÷ full-year — for CHOLAFIN that reported 5% growth instead of 20%.
+        # Keep the TTM numbers aside as `sales_ttm` / `profit_ttm`; score only full years.
+        fiscal_idx = [i for i, y in enumerate(years) if re.match(r"\s*Mar\s+\d{4}\s*$", str(y))]
+        sales_ttm_cr = profit_ttm_cr = None
+        if fiscal_idx and len(fiscal_idx) < len(years):
+            extra_idx = [i for i in range(len(years)) if i not in fiscal_idx]
+            # The rolling column sits at the right-hand (newest) end of the table.
+            for i in extra_idx:
+                if i < len(sales_raw) and sales_ttm_cr is None:
+                    sales_ttm_cr = _parse_indian_number(sales_raw[i])
+                if i < len(profit_raw) and profit_ttm_cr is None:
+                    profit_ttm_cr = _parse_indian_number(profit_raw[i])
+            years = [years[i] for i in fiscal_idx]
+            sales_raw = [sales_raw[i] for i in fiscal_idx if i < len(sales_raw)]
+            profit_raw = [profit_raw[i] for i in fiscal_idx if i < len(profit_raw)]
         
         # Match years to data length
         def _align_years(y, raw):
@@ -303,19 +451,34 @@ def fetch_screener_data(ticker, force_refresh=False):
         if len(profit_abs) < len(sales_abs):
             profit_abs = [_parse_crores_to_absolute(_parse_indian_number(v)) for v in profit_raw[:len(sales_abs)]]
         
-        # Reverse so that latest is first (index 0 = most recent year)
+        # Reverse so that latest is first (index 0 = most recent COMPLETE fiscal year)
         # Screener.in shows oldest on left, latest on right
         sales_abs.reverse()
         profit_abs.reverse()
         aligned_years.reverse()
-        
+
+        # Full balance sheet (net worth, borrowings, deposits, total assets) + the lender
+        # "Financing Margin %". None when the page has no balance-sheet rows. See
+        # _extract_balance_sheet_block(). Whether a stock IS a lender is decided later from
+        # sector/industry — never from the shape of the balance sheet.
+        balance_sheet = _extract_balance_sheet_block(soup)
+
         result = {
             "sales": sales_abs,
             "profit": profit_abs,
             "years": aligned_years,
+            # Rolling-twelve-month figures kept aside, NOT scored: they are not a fiscal year.
+            "sales_ttm": _parse_crores_to_absolute(sales_ttm_cr) if sales_ttm_cr else None,
+            "profit_ttm": _parse_crores_to_absolute(profit_ttm_cr) if profit_ttm_cr else None,
             "source": "screener.in",
             "success": True,
             "fetched_at": datetime.datetime.now().isoformat(),
+            # v2 = adds the balance-sheet block (net worth / borrowings / deposits / total
+            # assets / financing margin). data_fetcher treats a v1 cache as stale only for
+            # records it classifies as lenders, so a rescan refreshes the ~120 banks & NBFCs
+            # without forcing a 1,682-stock refetch.
+            "cache_version": 2,
+            "balance_sheet": balance_sheet,
         }
         
         # Cache the result

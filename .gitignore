@@ -30,6 +30,8 @@ jarvis_keys.txt
 *.log
 nul
 
+# Written by verify_engine_parity.py, read by frontend/verify_engine_parity.mjs
+_parity_expected.json
 
 .vercel
 .env*

@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { getPortfolio, addHolding, removeHolding, syncPortfolios, getAnalysis, getScanStatus, getStocks } from '../api';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
+import LynchSpotlight from '../components/LynchSpotlight';
 
 const COLORS = ['#00D4FF', '#FFD700', '#00E676', '#FF9F43', '#FF4757', '#A29BFE', '#FD79A8', '#74BFF9'];
 
@@ -225,6 +226,14 @@ export default function Dashboard({ userId = 1 }) {
             <div className="metric-value">{aboveSMA}</div>
             <div className="metric-sub" style={{ color: 'var(--red)' }}>{belowSMA} below SMA ⚠️</div>
           </div>
+        </div>
+
+        {/* ── 🏆 PETER LYNCH TOP 5 — on the front page, above the fold ──
+            The 100-point system is the page that answers "what do I research next?", so its
+            Top 5 belongs where the dashboard opens. Same engine as the full page, so the five
+            names here and the five there are identical. */}
+        <div className="section">
+          <LynchSpotlight />
         </div>
 
         <div className="grid-2 section">

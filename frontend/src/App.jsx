@@ -9,11 +9,14 @@ import Sectors from './pages/Sectors';
 import PeterLynch from './pages/PeterLynch';
 import './index.css';
 
+// 🏆 PETER LYNCH SITS ON TOP. The 100-point system is the front page of the fund: it is the
+// page that answers "what do I research next?", so it leads the navigation and is where the
+// app opens. The Portfolio Dashboard is one click below it.
 const NAV = [
+  { path: '/peter-lynch', icon: '🏆', label: 'Peter Lynch 100-Point' },
   { path: '/',            icon: '📊', label: 'Portfolio Dashboard' },
   { path: '/gurjas1',     icon: '🔍', label: 'GURJAS 1 Screener' },
   { path: '/gurjas2',     icon: '🎯', label: 'GURJAS 2 Screener' },
-  { path: '/peter-lynch', icon: '🏆', label: 'Peter Lynch 100-Point' },
   { path: '/momentum',    icon: '⚡', label: 'Momentum & Breakout' },
   { path: '/sectors',     icon: '🏭', label: 'Sectors & Industries' },
 ];

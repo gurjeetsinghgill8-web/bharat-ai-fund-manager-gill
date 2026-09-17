@@ -7,6 +7,12 @@
 //
 // Everything here is PURE JavaScript (no React, no DOM) so it can be unit-tested and reused.
 //
+// LENDER PATH — see src/lender.js
+// A bank or an NBFC can never satisfy `ROCE > 15%` or `Debt/Equity < 0.5`: borrowing IS the raw
+// material of a lender, and ROCE is meaningless when the "capital employed" IS the loan book. So
+// lenders used to score 0/20 on Quality and be filtered out of the ranking entirely. They are
+// now detected from sector + industry and judged on ROA, the capital cushion and NPA instead.
+//
 // DATA HONESTY RULE
 // The scan provides: Sales/Profit CAGR 3Y/5Y/Overall, latest YoY growth, PEG, PE, Market Cap,
 // Debt/Equity, Reserves, Promoter %, Institution %, Sector, Industry, Red-Alert flags.
@@ -14,6 +20,18 @@
 // Whenever an exact field is missing we either derive a clearly-labelled ESTIMATE from fields we do
 // have, or mark the line "unknown" and score it 0. Every line carries a `source` so the UI can show
 // "exact" / "estimate" / "unknown". Never silently invent a number.
+
+import {
+  applyLenderScreen,
+  isLender,
+  lenderFlags,
+  lenderMetrics,
+  lenderQualityItems,
+  LENDER_FACT_KEYS,
+  LENDER_QUERY,
+  LENDER_QUERY_NOTE,
+} from './lender.js';
+
 
 // ── Grade bands (from the spec) ─────────────────────────────────────────────
 export const GRADE_BANDS = [
@@ -108,6 +126,20 @@ export const SCREEN_DEFS = {
       'AND Pledged percentage = 0',
     ].join('\n'),
   },
+  // ── 🏦 BANKS & NBFC — the lender basket ──────────────────────────────────
+  // A bank or an NBFC can never pass the two baskets above: D/E < 0.75 is impossible when
+  // borrowing is the raw material, and ROCE is meaningless when the "capital employed" IS the
+  // loan book. Rather than let lenders fall out of the scan, they get their own basket and their
+  // own rubric — ROA, the capital cushion, and NPA. Selecting this chip shows lenders ONLY; the
+  // Elite / Hybrid chips judge a lender with its own rubric rather than dropping it.
+  financials: {
+    id: 'financials',
+    icon: '🏦',
+    name: 'Banks & NBFC',
+    blurb: '>15% growth · PEG < 1.2 · ROA > 1% · ROE > 15% · capital cushion · NPA when known',
+    query: LENDER_QUERY,
+    note: LENDER_QUERY_NOTE,
+  },
   all: {
     id: 'all',
     icon: '📚',
@@ -186,7 +218,17 @@ function withFallback(primary, fallback) {
 }
 
 // ── METRICS: normalise one scan record into the numbers the rubric needs ────
-export function lynchMetrics(stock) {
+// `facts` = the manual lender numbers typed into the score card (GNPA / NNPA / PCR / CAR).
+// NPA is login-walled on Screener.in, so this is how the NPA lens actually gets switched on.
+export function lynchMetrics(stock, facts) {
+  if (facts) {
+    const patched = { ...stock };
+    for (const [k, col] of Object.entries(LENDER_FACT_KEYS)) {
+      if (facts[k] !== undefined && facts[k] !== null && facts[k] !== '') patched[col] = facts[k];
+    }
+    stock = patched;
+  }
+
   const sales3yRaw = num(stock, ALIASES.sales3y);
   const sales5yRaw = num(stock, ALIASES.sales5y);
   const profit3yRaw = num(stock, ALIASES.profit3y);
@@ -226,11 +268,26 @@ export function lynchMetrics(stock) {
   const pledged = num(stock, ALIASES.pledged);
   const redAlert = boolOf(stock, ALIASES.redAlert);
 
+  // ── LENDER PATH ─────────────────────────────────────────────────────────
+  // For a bank / NBFC, ROCE is meaningless and Debt/Equity < 0.5 is impossible, so the ordinary
+  // Quality bucket would hand a perfectly good lender 0/20 and Layer-1 would then drop it from
+  // the ranking entirely. Lenders get their own metrics (ROA, capital cushion, NPA, P/B) and
+  // their own Quality bucket — see lender.js.
+  const lender = isLender(stock) ? lenderMetrics(stock, { patCr, mcap, pe }) : null;
+  let roceFinal = roce;
+  let roeFinal = roe;
+  if (lender) {
+    roceFinal = null;                       // not a lender metric — never score it
+    if (lender.roe !== null) roeFinal = lender.roe;
+  }
+
   return {
     symbol: stockSymbol(stock),
     sector: stock?.['Sector'] || stock?.['sector'] || 'Unknown',
     industry: stock?.['Industry'] || stock?.['industry'] || 'Unknown',
     category: stock?.['Category'] || '',
+    isLender: lender !== null,
+    lender,
 
     sales3y: sales3yRaw,
     sales5y: sales5.value,
@@ -247,8 +304,8 @@ export function lynchMetrics(stock) {
     patCr: patCr === null ? null : round1(patCr),
     debtCr: debtCr === null ? null : round1(debtCr),
 
-    roce: roce === null ? null : round1(roce),
-    roe: roe === null ? null : round1(roe),
+    roce: roceFinal === null ? null : round1(roceFinal),
+    roe: roeFinal === null ? null : round1(roeFinal),
     cfoPat,
     pledged,
     redAlert,
@@ -320,6 +377,13 @@ function scoreValuation(m) {
 
 // ── QUALITY /20 ─────────────────────────────────────────────────────────────
 function scoreQuality(m) {
+  // A lender's 20 marks come from ROA, the capital cushion and asset quality — not from ROCE and
+  // D/E. Same total, same ✅/❌/➖ shape, so the score card renders identically.
+  if (m.isLender) {
+    const lenderItems = lenderQualityItems(m.lender);
+    return { points: lenderItems.reduce((s, i) => s + i.points, 0), max: QUALITY_MAX, items: lenderItems };
+  }
+
   const items = [];
 
   // 1) ROCE > 20% — 5 marks
@@ -491,8 +555,8 @@ export function scoreStory(m, override) {
 }
 
 // ── THE 100-POINT SCORE ─────────────────────────────────────────────────────
-export function scoreLynch(stock, storyOverride) {
-  const m = lynchMetrics(stock);
+export function scoreLynch(stock, storyOverride, facts) {
+  const m = lynchMetrics(stock, facts);
   const growth = scoreGrowth(m);
   const valuation = scoreValuation(m);
   const quality = scoreQuality(m);
@@ -503,7 +567,13 @@ export function scoreLynch(stock, storyOverride) {
 
   const warnings = [...valuation.warnings];
   if (m.redAlert === true) warnings.push(`Red alert: ${m.redReasons || 'see scan'}`);
-  if (m.deRatio !== null && m.deRatio > 1) warnings.push(`High leverage (D/E ${m.deRatio.toFixed(2)}) — Lynch disliked debt-heavy growth`);
+  if (m.isLender) {
+    // A lender is not "debt-heavy" — it IS debt. Flag what actually breaks a lender instead:
+    // weak ROA, a thin capital cushion, and asset-quality stress.
+    warnings.push(...lenderFlags(m.lender));
+  } else if (m.deRatio !== null && m.deRatio > 1) {
+    warnings.push(`High leverage (D/E ${m.deRatio.toFixed(2)}) — Lynch disliked debt-heavy growth`);
+  }
   if (growth.items.some((i) => i.key === 'profit3y' && i.status === 'fail')
       && growth.items.some((i) => i.key === 'sales3y' && i.status === 'pass')) {
     warnings.push('Sales growing but profits are not — margin pressure');
@@ -533,10 +603,25 @@ export function scoreLynch(stock, storyOverride) {
 // `required: false` → if the metric is missing we cannot verify it; the stock stays in the
 //                     basket but the criterion is reported as "unverified" instead of failing,
 //                     so a missing pledge/ROCE column never silently empties the screen.
+//
+// LENDER ROUTING — the fix for "why did CHOLAFIN never appear?". Selecting 🔥 Elite or
+// ⭐ Lynch Hybrid used to judge a bank/NBFC by ROCE and Debt/Equity, which no lender can ever
+// satisfy, so every bank and NBFC was filtered out of the ranking. A lender is now judged by the
+// lender rubric (ROA · capital cushion · NPA), and 🏦 Banks & NBFC shows the lenders on their own.
+// Either way a lender is RANKED, never silently dropped.
 export function applyScreen(metrics, screenId) {
   const m = metrics;
   const unverified = [];
-  if (screenId === 'all' || !SCREEN_DEFS[screenId]) return { pass: true, unverified };
+  if (screenId === 'all' || !SCREEN_DEFS[screenId]) return { pass: true, unverified, failed: [], rubric: 'standard' };
+
+  if (screenId === 'financials') {
+    if (!m.isLender) return { pass: false, unverified: [], failed: ['Not a bank / NBFC'], rubric: 'lender' };
+    return applyLenderScreen(m.lender, 'financials');
+  }
+
+  if (m.isLender) {
+    return applyLenderScreen(m.lender, screenId === 'elite' ? 'elite' : 'hybrid');
+  }
 
   const strict = screenId === 'elite';
   const g = strict ? 20 : 15;
@@ -569,17 +654,38 @@ export function applyScreen(metrics, screenId) {
     }
     if (!c.ok) { pass = false; failed.push(c.label); }
   }
-  return { pass, unverified, failed };
+  return { pass, unverified, failed, rubric: 'standard' };
 }
 
 // ── Output helpers ──────────────────────────────────────────────────────────
+// One row per company, NSE winning over BSE.
+//
+// 89 names in the scan are listed on BOTH exchanges (CHOLAFIN.NS and CHOLAFIN.BO), and
+// `stockSymbol()` strips the .NS / .BO suffix — so an undeduplicated list ranks CHOLAFIN twice
+// with two different scores and makes a stock search return the same name twice. NSE is the
+// primary listing that the Screener.in queries match, so it is the one kept. The Sectors page
+// still sees both, because there the NSE-vs-BSE split is wanted.
+// (Twin: `dedupe_by_symbol` in lynch_engine.py.)
+export function dedupeBySymbol(records) {
+  const best = new Map();
+  for (const rec of records) {
+    const sym = stockSymbol(rec);
+    if (!sym) continue;
+    const exch = String(rec?.['Exchange'] || rec?.['exchange'] || '').toUpperCase();
+    const current = best.get(sym);
+    if (!current || (exch === 'NSE' && current.exch !== 'NSE')) best.set(sym, { exch, rec });
+  }
+  return [...best.values()].map((v) => v.rec);
+}
+
 export function toCsv(rows) {
   // Column order here is the on-screen order too: Market Cap and Decision come first.
   const head = [
-    'Rank', 'Symbol', 'MCap(Cr)', 'Decision', 'Grade', 'Total/100', 'Sector',
+    'Rank', 'Symbol', 'Type', 'MCap(Cr)', 'Decision', 'Grade', 'Total/100', 'Sector',
     'Growth/40', 'Valuation/20', 'Quality/20', 'Story/20',
     'PEG', 'Sales3Y%', 'Sales5Y%', 'Profit3Y%', 'Profit5Y%',
     'ROCE%', 'ROE%', 'Debt/Equity', 'Promoter%',
+    'ROA%', 'NetWorth(Cr)', 'Capital%Assets', 'P/B', 'GNPA%', 'NNPA%',
   ];
   const esc = (v) => {
     const s = v === null || v === undefined ? '' : String(v);
@@ -587,12 +693,15 @@ export function toCsv(rows) {
   };
   const lines = rows.map((r, i) => {
     const m = r.metrics;
+    const ld = m.lender || {};
     return [
-      i + 1, r.symbol, m.mcap === null ? '' : Math.round(m.mcap), r.decision, r.grade, r.total, r.sector,
+      i + 1, r.symbol, ld.kindLabel ? ld.kindLabel.split(' /')[0] : '',
+      m.mcap === null ? '' : Math.round(m.mcap), r.decision, r.grade, r.total, r.sector,
       r.growth.points, r.valuation.points, r.quality.points, r.story.points,
       m.peg, m.sales3y, m.sales5y, m.profit3y, m.profit5y,
       m.roce, m.roe,
       m.deRatio === null ? '' : m.deRatio.toFixed(2), m.promoter,
+      ld.roa ?? '', ld.netWorthCr ?? '', ld.capitalPct ?? '', ld.pb ?? '', ld.gnpa ?? '', ld.nnpa ?? '',
     ].map(esc).join(',');
   });
   return [head.join(','), ...lines].join('\n');
@@ -606,6 +715,13 @@ export function topFiveText(rows, limit = 5) {
     lines.push(
       `${i + 1}. ${r.symbol} — ${r.total}/100 (${r.grade}) ${r.decision}`,
       `   PEG ${m.peg ?? '—'} · Sales 3Y ${m.sales3y ?? '—'}% / 5Y ${m.sales5y ?? '—'}% · Profit 3Y ${m.profit3y ?? '—'}%`,
+    );
+    if (m.isLender && m.lender) {
+      const ld = m.lender;
+      const npa = ld.gnpa !== null ? `GNPA ${ld.gnpa}% / NNPA ${ld.nnpa ?? '—'}%` : 'NPA not in scan — check Screener.in';
+      lines.push(`   ${ld.kindLabel} · ROA ${ld.roa ?? '—'}% · ROE ${ld.roe ?? '—'}% · capital ${ld.capitalPct ?? '—'}% of assets · ${npa}`);
+    }
+    lines.push(
       `   Growth ${r.growth.points}/40 · Valuation ${r.valuation.points}/20 · Quality ${r.quality.points}/20 · Story ${r.story.points}/20`,
     );
   });

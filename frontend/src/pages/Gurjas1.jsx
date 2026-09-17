@@ -2,6 +2,7 @@
 // Query: Sales/Profit 3Y+5Y+Overall > 20% + Price > 200 DMA + PEG < 1.2
 import { useState, useEffect } from 'react';
 import { getGurjas1, getScanStatus, triggerScan } from '../api';
+import ClearableInput from '../components/ClearableInput';
 
 // ── Key mappings for each sortable column ───────────────────
 const COL_KEYS = {
@@ -178,12 +179,13 @@ export default function Gurjas1() {
 
         {/* Search */}
         <div style={{ marginBottom: 16 }}>
-          <input
-            className="input"
+          <ClearableInput
             style={{ maxWidth: 280 }}
             placeholder="Search symbol..."
             value={search}
-            onChange={e => setSearch(e.target.value)}
+            onChange={setSearch}
+            matchCount={filtered.length}
+            totalCount={stocks.length}
           />
         </div>
 
@@ -234,7 +236,6 @@ export default function Gurjas1() {
                     const peg = parseFloat(getCol(s, COL_KEYS.peg));
                     const ltp = parseFloat(getCol(s, COL_KEYS.ltp));
                     const sma = parseFloat(getCol(s, COL_KEYS.sma_200));
-                    const stars = parseInt(getCol(s, ['Grand Total Stars', 'grand_total_stars', 'total_stars', 'Stars (Total)'])) || 0;
                     const mcap  = getCol(s, COL_KEYS.mcap);
 
                     const pct = v => isNaN(v) ? '—' : <span className={v >= 20 ? 'positive' : 'neutral'}>{v.toFixed(1)}%</span>;

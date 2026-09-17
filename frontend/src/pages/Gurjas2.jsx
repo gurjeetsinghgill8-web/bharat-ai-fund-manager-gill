@@ -2,6 +2,7 @@
 // Query: Sales/Profit 3Y > 10% + Sales/Profit Overall > 20% + MCap > 1000Cr + PEG < 1.5
 import { useState, useEffect } from 'react';
 import { getGurjas2, getScanStatus, triggerScan } from '../api';
+import ClearableInput from '../components/ClearableInput';
 
 // ── Key mappings for each sortable column ───────────────────
 const COL_KEYS = {
@@ -178,8 +179,8 @@ export default function Gurjas2() {
 
         {/* Filters */}
         <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
-          <input className="input" style={{ maxWidth: 220 }} placeholder="Search symbol..."
-            value={search} onChange={e => setSearch(e.target.value)} />
+          <ClearableInput style={{ maxWidth: 220 }} placeholder="Search symbol..."
+            value={search} onChange={setSearch} matchCount={filtered.length} totalCount={stocks.length} />
           <input className="input" style={{ maxWidth: 180 }} placeholder="Min MCap (Cr)..."
             type="number" value={minMcap} onChange={e => setMinMcap(e.target.value)} />
         </div>
